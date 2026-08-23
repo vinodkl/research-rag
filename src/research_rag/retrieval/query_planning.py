@@ -1,10 +1,7 @@
-"""Turn one question into a small set of better retrieval queries.
+"""Add search-friendly rewrites, decomposition, and retrieval-only HyDE.
 
-The original question is always searched. One OpenAI call can add:
-
-- rewrites: the same need expressed with search-friendly wording,
-- decomposition: smaller searches for a multi-part question,
-- HyDE: an answer-shaped passage used only for retrieval, never as evidence.
+The original question is always searched, and one OpenAI call creates every
+requested variant.
 """
 
 import json
@@ -27,38 +24,19 @@ ShortVariant = Annotated[str, Field(max_length=MAX_VARIANT_CHARS)]
 
 @dataclass(frozen=True)
 class QueryVariant:
-    """One text to embed for retrieval and how it was produced."""
-
     text: str
     kind: str
 
 
 @dataclass(frozen=True)
 class ExpansionResult:
-    """Query variants plus safe diagnostics for traces and eval reports."""
-
     variants: list[QueryVariant]
     strategy_status: dict[str, str]
     errors: tuple[str, ...] = ()
     model: str | None = None
 
 
-@dataclass(frozen=True)
-class _StrategySelection:
-    """Which optional retrieval aids one question actually requests."""
-
-    wants_rewrites: bool
-    wants_hyde: bool
-    rewrite_limit: int
-
-    @property
-    def requested(self) -> bool:
-        return self.wants_rewrites or self.wants_hyde
-
-
 class ExpansionOutput(BaseModel):
-    """The structured response expected from OpenAI."""
-
     model_config = ConfigDict(extra="forbid")
 
     rewrites: list[ShortVariant] = Field(max_length=MAX_REWRITES)
@@ -94,17 +72,18 @@ _MULTI_PART = re.compile(
 
 def should_expand(question: str) -> bool:
     """Identify questions likely to benefit from both expansion strategies."""
-
     text = question.strip()
     if not text:
         return False
-    if _OPEN_ENDED.search(text) or _MULTI_PART.search(text):
-        return True
-    if text.count("?") > 1 or "\n" in text or ";" in text:
-        return True
-    if len(_QUESTION_WORD.findall(text)) >= 2:
-        return True
-    return len(re.findall(r"\b\w+\b", text)) >= 18
+    return bool(
+        _OPEN_ENDED.search(text)
+        or _MULTI_PART.search(text)
+        or text.count("?") > 1
+        or "\n" in text
+        or ";" in text
+        or len(_QUESTION_WORD.findall(text)) >= 2
+        or len(re.findall(r"\b\w+\b", text)) >= 18
+    )
 
 
 def expand(
@@ -117,10 +96,27 @@ def expand(
 ) -> ExpansionResult:
     """Return the original query plus optional rewrites and a HyDE passage."""
 
-    selection = _select_strategies(question, mode, max_rewrites)
-    status = _mark_requested_strategies(selection)
-    if not selection.requested:
-        return ExpansionResult([QueryVariant(question, "original")], status)
+    if mode not in MODES:
+        supported = ", ".join(sorted(MODES))
+        raise ValueError(
+            f"unsupported query expansion mode {mode!r}; choose one of: {supported}"
+        )
+
+    variants = [QueryVariant(question, "original")]
+    status = {"rewrite": "not-requested", "hyde": "not-requested"}
+    selected = "hybrid" if mode == "auto" and should_expand(question) else mode
+    if not question.strip() or selected in {"original", "auto"}:
+        return ExpansionResult(variants, status)
+
+    rewrite_limit = min(MAX_REWRITES, max(0, max_rewrites))
+    wants_rewrites = selected in {"rewrite", "hybrid"} and rewrite_limit > 0
+    wants_hyde = selected in {"hyde", "hybrid"}
+    status = {
+        "rewrite": "pending" if wants_rewrites else "not-requested",
+        "hyde": "pending" if wants_hyde else "not-requested",
+    }
+    if not wants_rewrites and not wants_hyde:
+        return ExpansionResult(variants, status)
 
     active_settings = settings if settings is not None else get_settings()
     model = active_settings.query_model
@@ -129,106 +125,39 @@ def expand(
         plan = _plan(
             active_client,
             question,
-            wants_rewrites=selection.wants_rewrites,
-            wants_hyde=selection.wants_hyde,
-            rewrite_limit=selection.rewrite_limit,
+            wants_rewrites=wants_rewrites,
+            wants_hyde=wants_hyde,
+            rewrite_limit=rewrite_limit,
             model=model,
         )
     except Exception as exc:  # noqa: BLE001 - the original query must remain usable
-        return _failed_result(question, status, model, exc)
-
-    return _collect_result(question, selection, status, plan, model)
-
-
-def _select_strategies(
-    question: str, mode: str, max_rewrites: int
-) -> _StrategySelection:
-    """Validate the mode and select only the strategies worth requesting."""
-
-    if mode not in MODES:
-        supported = ", ".join(sorted(MODES))
-        raise ValueError(
-            f"unsupported query expansion mode {mode!r}; choose one of: {supported}"
+        for strategy, value in status.items():
+            if value == "pending":
+                status[strategy] = "unavailable"
+        return ExpansionResult(
+            variants,
+            status,
+            errors=(f"Query planning failed ({type(exc).__name__})",),
+            model=model,
         )
 
-    selected_mode = "hybrid" if mode == "auto" and should_expand(question) else mode
-    rewrite_limit = min(MAX_REWRITES, max(0, max_rewrites))
-    can_expand = bool(question.strip()) and selected_mode != "auto"
-    return _StrategySelection(
-        wants_rewrites=(
-            can_expand and selected_mode in {"rewrite", "hybrid"} and rewrite_limit > 0
-        ),
-        wants_hyde=can_expand and selected_mode in {"hyde", "hybrid"},
-        rewrite_limit=rewrite_limit,
-    )
-
-
-def _mark_requested_strategies(
-    selection: _StrategySelection,
-) -> dict[str, str]:
-    """Initialize the two stable status fields used by traces and reports."""
-
-    return {
-        "rewrite": "pending" if selection.wants_rewrites else "not-requested",
-        "hyde": "pending" if selection.wants_hyde else "not-requested",
-    }
-
-
-def _failed_result(
-    question: str,
-    status: dict[str, str],
-    model: str,
-    error: Exception,
-) -> ExpansionResult:
-    unavailable = {
-        strategy: "unavailable" if value == "pending" else value
-        for strategy, value in status.items()
-    }
-    return ExpansionResult(
-        [QueryVariant(question, "original")],
-        unavailable,
-        errors=(f"Query planning failed ({type(error).__name__})",),
-        model=model,
-    )
-
-
-def _collect_result(
-    question: str,
-    selection: _StrategySelection,
-    status: dict[str, str],
-    plan: ExpansionOutput,
-    model: str,
-) -> ExpansionResult:
-    """Collect bounded, unique model output into the public result shape."""
-
-    variants = [QueryVariant(question, "original")]
     seen = {_dedupe_key(question)}
+    if wants_rewrites:
+        for text in plan.rewrites:
+            _append_unique(variants, seen, text, "rewrite")
+            if sum(item.kind == "rewrite" for item in variants) >= rewrite_limit:
+                break
+        status["rewrite"] = (
+            "applied" if any(item.kind == "rewrite" for item in variants) else "empty"
+        )
 
-    if selection.wants_rewrites:
-        _append_rewrites(variants, seen, plan.rewrites, selection.rewrite_limit)
-        status["rewrite"] = _application_status(variants, "rewrite")
-
-    if selection.wants_hyde:
+    if wants_hyde:
         _append_unique(variants, seen, plan.hyde_passage, "hyde")
-        status["hyde"] = _application_status(variants, "hyde")
+        status["hyde"] = (
+            "applied" if any(item.kind == "hyde" for item in variants) else "empty"
+        )
 
     return ExpansionResult(variants, status, model=model)
-
-
-def _append_rewrites(
-    variants: list[QueryVariant],
-    seen: set[str],
-    rewrites: list[str],
-    limit: int,
-) -> None:
-    for text in rewrites:
-        _append_unique(variants, seen, text, "rewrite")
-        if sum(item.kind == "rewrite" for item in variants) >= limit:
-            return
-
-
-def _application_status(variants: list[QueryVariant], kind: str) -> str:
-    return "applied" if any(item.kind == kind for item in variants) else "empty"
 
 
 def _plan(

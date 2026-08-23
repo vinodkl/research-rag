@@ -1,8 +1,6 @@
-"""Fast input, retrieval, and output guardrails for the RAG pipeline.
+"""Deterministic input, evidence, and output checks for the RAG pipeline.
 
-The rules here are intentionally deterministic: they run before expensive model
-calls and are straightforward to test. They are a first layer, not a complete
-moderation or adversarial-defense system.
+These cheap rules are a first layer, not a complete moderation system.
 """
 
 import math
@@ -12,8 +10,7 @@ from dataclasses import dataclass
 
 from research_rag.models import Chunk
 
-# Common prompt-injection phrasings and role-token attacks. Retrieved text is
-# still treated as data in generate.SYSTEM; this is the cheap front-door layer.
+# Common prompt-injection phrasings and role-token attacks.
 INJECTION = re.compile(
     r"(?:ignore|disregard|forget)\s+(?:the\s+|all\s+)?(?:previous|prior|above)\s+"
     r"(?:instructions?|prompts?)|"
@@ -23,8 +20,7 @@ INJECTION = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
-# Intent-level patterns only. A paper question that merely mentions safety,
-# toxicity, or attacks should remain answerable.
+# Intent patterns still allow papers that merely discuss safety or attacks.
 UNSAFE_REQUEST = re.compile(
     r"\b(?:write|generate|produce|give me)\b.{0,50}\b(?:hate speech|racial slurs?|"
     r"pornographic|nsfw)\b|"
@@ -34,9 +30,7 @@ UNSAFE_REQUEST = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
-# Obvious consumer intents outside a corpus of machine-learning papers. Topic
-# control remains conservative: ambiguous technical questions continue to the
-# retrieval score guard instead of being rejected by a brittle allow-list.
+# Ambiguous technical questions continue to the retrieval evidence guard.
 OFF_TOPIC = re.compile(
     r"\b(?:best|nearest|recommend)\s+(?:pizza|restaurant|cafe)\b|"
     r"\b(?:pizza|cooking|dinner)\s+recipes?\b|\brestaurant\s+recommendations?\b|"
@@ -89,11 +83,7 @@ def check_question(question: str) -> str | None:
 
 
 def sanitize_question(question: str) -> SanitizedQuestion:
-    """Normalize input and replace common PII with typed placeholders.
-
-    Values are deliberately not kept in the return object, so logs and traces do
-    not become a second copy of sensitive input.
-    """
+    """Replace PII without retaining the original values in logs or traces."""
     text = normalize(question)
     redactions: list[str] = []
 
@@ -143,55 +133,39 @@ def check_citations(
     """Keep only citations whose quote appears verbatim in the chunk they cite."""
     if not isinstance(citations, list):
         return []
-
     by_id = {chunk.id: chunk for chunk, _ in results}
     valid = []
     seen: set[tuple[str, str]] = set()
     for citation in citations:
-        checked = _validate_citation(citation, by_id, seen)
-        if checked is not None:
-            valid.append(checked)
+        if not isinstance(citation, dict):
+            continue
+        chunk_id = citation.get("chunk_id")
+        quote = citation.get("quote")
+        if not isinstance(chunk_id, str) or not isinstance(quote, str):
+            continue
+
+        chunk = by_id.get(chunk_id)
+        normalized_quote = _squash(quote)
+        key = (chunk_id, normalized_quote)
+        if (
+            chunk is None
+            or not 10 < len(normalized_quote) <= MAX_CITATION_QUOTE_CHARS
+            or len(quote) > MAX_CITATION_QUOTE_CHARS
+            or normalized_quote not in _squash(chunk.text)
+            or sanitize_question(quote).redactions
+            or key in seen
+        ):
+            continue
+
+        seen.add(key)
+        valid.append(
+            {
+                "chunk_id": chunk.id,
+                "quote": quote,
+                "source": f"{chunk.title}, {chunk.section}, p.{chunk.page}",
+            }
+        )
     return valid
-
-
-def _validate_citation(
-    citation: object,
-    chunks_by_id: dict[str, Chunk],
-    seen: set[tuple[str, str]],
-) -> dict | None:
-    """Validate one citation with readable, mechanical checks."""
-
-    if not isinstance(citation, dict):
-        return None
-
-    chunk_id = citation.get("chunk_id")
-    quote = citation.get("quote")
-    if not isinstance(chunk_id, str) or not isinstance(quote, str):
-        return None
-
-    chunk = chunks_by_id.get(chunk_id)
-    normalized_quote = _squash(quote)
-    if chunk is None:
-        return None
-    if not 10 < len(normalized_quote) <= MAX_CITATION_QUOTE_CHARS:
-        return None
-    if len(quote) > MAX_CITATION_QUOTE_CHARS:
-        return None
-    # Whitespace-insensitive: models often reflow line breaks when quoting.
-    if normalized_quote not in _squash(chunk.text):
-        return None
-    if sanitize_question(quote).redactions:
-        return None
-
-    key = (chunk_id, normalized_quote)
-    if key in seen:
-        return None
-    seen.add(key)
-    return {
-        "chunk_id": chunk.id,
-        "quote": quote,
-        "source": f"{chunk.title}, {chunk.section}, p.{chunk.page}",
-    }
 
 
 def _squash(text: str) -> str:

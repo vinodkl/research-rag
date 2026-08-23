@@ -8,6 +8,7 @@ it never silently falls back to a different backend when one is unavailable.
 from typing import Protocol
 
 from research_rag.models import Chunk
+from research_rag.retrieval import faiss_store, qdrant_store
 from research_rag.settings import Settings, get_settings
 
 ScoredChunk = tuple[Chunk, float]
@@ -41,13 +42,8 @@ def build(
 
     active = settings or get_settings()
     if active.vector_backend == "faiss":
-        from research_rag.retrieval import faiss_store
-
         return faiss_store.build(chunks, corpus_sha256=corpus_sha256, settings=active)
-
-    from research_rag.retrieval import qdrant_index
-
-    return qdrant_index.build(chunks, corpus_sha256=corpus_sha256, settings=active)
+    return qdrant_store.build(chunks, corpus_sha256=corpus_sha256, settings=active)
 
 
 def load(settings: Settings | None = None) -> VectorStore:
@@ -55,12 +51,7 @@ def load(settings: Settings | None = None) -> VectorStore:
 
     active = settings or get_settings()
     if active.vector_backend == "faiss":
-        from research_rag.retrieval import faiss_store
-
         return faiss_store.load(active)
-
-    from research_rag.retrieval import qdrant_store
-
     return qdrant_store.load(active)
 
 
@@ -80,8 +71,6 @@ def readiness(settings: Settings | None = None) -> dict[str, object]:
 
 def clear_cache() -> None:
     """Clear concrete backend caches during application shutdown."""
-
-    from research_rag.retrieval import faiss_store, qdrant_store
 
     faiss_store.clear_cache()
     qdrant_store.clear_cache()

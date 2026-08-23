@@ -8,7 +8,14 @@ import os
 from pathlib import Path
 from typing import Literal, Self, cast
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    ValidationError,
+    model_validator,
+)
 
 from research_rag.errors import ConfigurationError
 
@@ -110,83 +117,66 @@ class Settings(BaseModel):
     def from_env(cls) -> "Settings":
         """Read and validate the current process environment."""
 
-        query_mode = _text("RAG_QUERY_MODE", "auto").lower()
-        if query_mode not in {"auto", "original", "rewrite", "hyde", "hybrid"}:
-            raise ConfigurationError(
-                "RAG_QUERY_MODE must be auto, original, rewrite, hyde, or hybrid"
-            )
-
-        vector_backend = _text("RAG_VECTOR_BACKEND", "faiss").lower()
-        if vector_backend not in {"faiss", "qdrant"}:
-            raise ConfigurationError("RAG_VECTOR_BACKEND must be faiss or qdrant")
-
-        qdrant_url = _text("QDRANT_URL", "http://127.0.0.1:6333")
-        if not qdrant_url.startswith(("http://", "https://")):
-            raise ConfigurationError("QDRANT_URL must begin with http:// or https://")
         qdrant_replication_factor = _positive_int("QDRANT_REPLICATION_FACTOR", 1)
         qdrant_write_consistency_factor = _positive_int(
             "QDRANT_WRITE_CONSISTENCY_FACTOR", 1
         )
-        if (
-            vector_backend == "qdrant"
-            and qdrant_write_consistency_factor > qdrant_replication_factor
-        ):
-            raise ConfigurationError(
-                "QDRANT_WRITE_CONSISTENCY_FACTOR cannot exceed replication factor"
-            )
 
         key = os.getenv("OPENAI_API_KEY", "").strip()
         qdrant_key = os.getenv("QDRANT_API_KEY", "").strip()
-        if (
-            vector_backend == "qdrant"
-            and qdrant_key
-            and not qdrant_url.startswith("https://")
-        ):
-            raise ConfigurationError(
-                "QDRANT_URL must use HTTPS when QDRANT_API_KEY is set"
+        try:
+            return cls(
+                openai_api_key=SecretStr(key) if key else None,
+                data_dir=_path("RAG_DATA_DIR", _checkout_or_cwd("data")),
+                corpus_path=_path(
+                    "RAG_CORPUS_PATH", _checkout_or_cwd("config/papers.yaml")
+                ),
+                golden_questions_path=_path(
+                    "RAG_GOLDEN_PATH",
+                    _checkout_or_cwd("config/golden_questions.yaml"),
+                ),
+                vector_backend=cast(
+                    VectorBackend, _text("RAG_VECTOR_BACKEND", "faiss").lower()
+                ),
+                qdrant_url=_text("QDRANT_URL", "http://127.0.0.1:6333"),
+                qdrant_api_key=SecretStr(qdrant_key) if qdrant_key else None,
+                qdrant_collection=_text("QDRANT_COLLECTION", "research-rag"),
+                qdrant_timeout_seconds=_positive_int("QDRANT_TIMEOUT_SECONDS", 10),
+                qdrant_index_timeout_seconds=_positive_int(
+                    "QDRANT_INDEX_TIMEOUT_SECONDS", 300
+                ),
+                qdrant_replication_factor=qdrant_replication_factor,
+                qdrant_write_consistency_factor=qdrant_write_consistency_factor,
+                qdrant_prefer_grpc=_boolean("QDRANT_PREFER_GRPC", False),
+                embedding_model=_text(
+                    "OPENAI_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL
+                ),
+                caption_model=_text("OPENAI_CAPTION_MODEL", DEFAULT_CAPTION_MODEL),
+                query_model=_text("OPENAI_QUERY_MODEL", DEFAULT_QUERY_MODEL),
+                rerank_model=_text("OPENAI_RERANK_MODEL", DEFAULT_RERANK_MODEL),
+                generation_model=_text(
+                    "OPENAI_GENERATION_MODEL", DEFAULT_GENERATION_MODEL
+                ),
+                evaluation_model=_text("OPENAI_EVAL_MODEL", DEFAULT_EVALUATION_MODEL),
+                query_mode=cast(QueryMode, _text("RAG_QUERY_MODE", "auto").lower()),
+                rerank_enabled=_boolean("RAG_RERANK", True),
+                per_query_k=_positive_int("RAG_PER_QUERY_K", 20),
+                candidate_k=_positive_int("RAG_CANDIDATE_K", 20),
+                context_k=_positive_int("RAG_CONTEXT_K", 6),
+                openai_timeout_seconds=_positive_float("OPENAI_TIMEOUT_SECONDS", 60.0),
+                openai_max_retries=_non_negative_int("OPENAI_MAX_RETRIES", 2),
+                download_timeout_seconds=_positive_float(
+                    "RAG_DOWNLOAD_TIMEOUT_SECONDS", 60.0
+                ),
+                download_retries=_non_negative_int("RAG_DOWNLOAD_RETRIES", 2),
+                api_host=_text("RAG_API_HOST", "127.0.0.1"),
+                api_port=_port("RAG_API_PORT", 8477),
+                log_level=_text("RAG_LOG_LEVEL", "INFO").upper(),
             )
-        return cls(
-            openai_api_key=SecretStr(key) if key else None,
-            data_dir=_path("RAG_DATA_DIR", _checkout_or_cwd("data")),
-            corpus_path=_path(
-                "RAG_CORPUS_PATH", _checkout_or_cwd("config/papers.yaml")
-            ),
-            golden_questions_path=_path(
-                "RAG_GOLDEN_PATH",
-                _checkout_or_cwd("config/golden_questions.yaml"),
-            ),
-            vector_backend=cast(VectorBackend, vector_backend),
-            qdrant_url=qdrant_url,
-            qdrant_api_key=SecretStr(qdrant_key) if qdrant_key else None,
-            qdrant_collection=_text("QDRANT_COLLECTION", "research-rag"),
-            qdrant_timeout_seconds=_positive_int("QDRANT_TIMEOUT_SECONDS", 10),
-            qdrant_index_timeout_seconds=_positive_int(
-                "QDRANT_INDEX_TIMEOUT_SECONDS", 300
-            ),
-            qdrant_replication_factor=qdrant_replication_factor,
-            qdrant_write_consistency_factor=qdrant_write_consistency_factor,
-            qdrant_prefer_grpc=_boolean("QDRANT_PREFER_GRPC", False),
-            embedding_model=_text("OPENAI_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL),
-            caption_model=_text("OPENAI_CAPTION_MODEL", DEFAULT_CAPTION_MODEL),
-            query_model=_text("OPENAI_QUERY_MODEL", DEFAULT_QUERY_MODEL),
-            rerank_model=_text("OPENAI_RERANK_MODEL", DEFAULT_RERANK_MODEL),
-            generation_model=_text("OPENAI_GENERATION_MODEL", DEFAULT_GENERATION_MODEL),
-            evaluation_model=_text("OPENAI_EVAL_MODEL", DEFAULT_EVALUATION_MODEL),
-            query_mode=cast(QueryMode, query_mode),
-            rerank_enabled=_boolean("RAG_RERANK", True),
-            per_query_k=_positive_int("RAG_PER_QUERY_K", 20),
-            candidate_k=_positive_int("RAG_CANDIDATE_K", 20),
-            context_k=_positive_int("RAG_CONTEXT_K", 6),
-            openai_timeout_seconds=_positive_float("OPENAI_TIMEOUT_SECONDS", 60.0),
-            openai_max_retries=_non_negative_int("OPENAI_MAX_RETRIES", 2),
-            download_timeout_seconds=_positive_float(
-                "RAG_DOWNLOAD_TIMEOUT_SECONDS", 60.0
-            ),
-            download_retries=_non_negative_int("RAG_DOWNLOAD_RETRIES", 2),
-            api_host=_text("RAG_API_HOST", "127.0.0.1"),
-            api_port=_port("RAG_API_PORT", 8477),
-            log_level=_text("RAG_LOG_LEVEL", "INFO").upper(),
-        )
+        except ValidationError as exc:
+            error = exc.errors(include_input=False, include_url=False)[0]
+            message = str(error["msg"]).removeprefix("Value error, ")
+            raise ConfigurationError(message) from exc
 
 
 def get_settings() -> Settings:

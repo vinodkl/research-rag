@@ -7,7 +7,6 @@ from qdrant_client import QdrantClient
 
 from research_rag.settings import Settings, get_settings
 
-# Cached return values must still be closed explicitly at process shutdown.
 _CLIENTS: list[OpenAI] = []
 _QDRANT_CLIENTS: list[QdrantClient] = []
 

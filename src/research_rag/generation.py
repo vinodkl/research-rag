@@ -1,13 +1,7 @@
-"""Step 5 - Generation: the model answers from the retrieved chunks, with receipts.
+"""Generate a grounded answer from the selected chunks.
 
-The whole trick of RAG happens here: the retrieved chunks go into the prompt,
-and the model is told to answer ONLY from them. Three rules make that stick:
-  1. ground: answer only from the passages,
-  2. allow refusal: "the papers do not cover this" is a correct answer,
-  3. cite: every claim needs a chunk id and a verbatim quote.
-
-The response is forced into a JSON schema, so citations come back as data we can
-verify (see guards.check_citations) - not as prose we would have to trust.
+The model may refuse, must cite every claim, and returns structured citations
+that guardrails can verify mechanically against the supplied passages.
 """
 
 import json

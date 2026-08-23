@@ -16,7 +16,7 @@ import re
 import shutil
 import tempfile
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -47,15 +47,6 @@ class IndexManifest(BaseModel):
     corpus_sha256: str
     chunks_sha256: str
     created_at: str
-
-
-@dataclass(frozen=True)
-class LoadedFaissBuild:
-    """Validated files behind the active ``CURRENT`` pointer."""
-
-    index: faiss.Index
-    chunks: list[Chunk]
-    build_id: str
 
 
 def build(
@@ -127,12 +118,11 @@ def build(
 def load(settings: Settings) -> "FaissVectorStore":
     """Load and validate the active build, cached until the process restarts."""
 
-    loaded = _load_cached(str(settings.index_dir), settings.embedding_model)
+    index, chunks, build_id = _load_cached(
+        str(settings.index_dir), settings.embedding_model
+    )
     return FaissVectorStore(
-        index=loaded.index,
-        chunks=loaded.chunks,
-        settings=settings,
-        build_id=loaded.build_id,
+        index=index, chunks=chunks, settings=settings, build_id=build_id
     )
 
 
@@ -143,7 +133,9 @@ def clear_cache() -> None:
 
 
 @lru_cache(maxsize=4)
-def _load_cached(index_dir_text: str, embedding_model: str) -> LoadedFaissBuild:
+def _load_cached(
+    index_dir_text: str, embedding_model: str
+) -> tuple[faiss.Index, list[Chunk], str]:
     index_dir = Path(index_dir_text)
     current = index_dir / "CURRENT"
     try:
@@ -154,7 +146,7 @@ def _load_cached(index_dir_text: str, embedding_model: str) -> LoadedFaissBuild:
             index, chunks = _load_build(
                 index_dir / "builds" / build_id, embedding_model
             )
-            return LoadedFaissBuild(index, chunks, build_id)
+            return index, chunks, build_id
 
         # Version 1 compatibility: no manifest/model check was recorded. Counts
         # and dimensions are still validated before serving.
@@ -162,7 +154,7 @@ def _load_cached(index_dir_text: str, embedding_model: str) -> LoadedFaissBuild:
         legacy_chunks = index_dir / "chunks.json"
         if legacy_index.is_file() and legacy_chunks.is_file():
             index, chunks = _load_pair(legacy_index, legacy_chunks)
-            return LoadedFaissBuild(index, chunks, "legacy")
+            return index, chunks, "legacy"
     except IndexUnavailable:
         raise
     except Exception as exc:

@@ -120,27 +120,36 @@ def test_invalid_environment_values_fail_fast(monkeypatch, name: str, value: str
 @pytest.mark.parametrize(
     ("name", "value"),
     [
-        ("qdrant_timeout_seconds", 0),
-        ("qdrant_index_timeout_seconds", 0),
-        ("qdrant_replication_factor", 0),
-        ("qdrant_write_consistency_factor", 0),
-        ("embedding_model", ""),
-        ("caption_model", ""),
-        ("query_model", ""),
-        ("rerank_model", ""),
-        ("generation_model", ""),
-        ("evaluation_model", ""),
-        ("per_query_k", 0),
-        ("candidate_k", 0),
-        ("context_k", 0),
-        ("openai_timeout_seconds", 0),
-        ("openai_max_retries", -1),
-        ("download_timeout_seconds", 0),
-        ("download_retries", -1),
-        ("api_host", ""),
-        ("api_port", 0),
+        *[
+            (name, 0)
+            for name in (
+                "qdrant_timeout_seconds",
+                "qdrant_index_timeout_seconds",
+                "qdrant_replication_factor",
+                "qdrant_write_consistency_factor",
+                "per_query_k",
+                "candidate_k",
+                "context_k",
+                "openai_timeout_seconds",
+                "download_timeout_seconds",
+                "api_port",
+            )
+        ],
+        *[(name, -1) for name in ("openai_max_retries", "download_retries")],
+        *[
+            (name, "")
+            for name in (
+                "embedding_model",
+                "caption_model",
+                "query_model",
+                "rerank_model",
+                "generation_model",
+                "evaluation_model",
+                "api_host",
+                "log_level",
+            )
+        ],
         ("api_port", 65_536),
-        ("log_level", ""),
     ],
 )
 def test_programmatic_settings_enforce_the_same_field_bounds(

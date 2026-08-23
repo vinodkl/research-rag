@@ -75,11 +75,8 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     @application.get("/readyz")
-    def ready(request: Request) -> JSONResponse:
-        # Lifespan pins one validated configuration for the running process.
-        # The fallback keeps direct TestClient calls useful without startup.
-        settings = getattr(request.app.state, "settings", None) or get_settings()
-        status = store.readiness(settings)
+    def ready() -> JSONResponse:
+        status = store.readiness(get_settings())
         return JSONResponse(status, status_code=200 if status["ready"] else 503)
 
     @application.get("/", response_class=HTMLResponse)
