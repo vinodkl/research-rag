@@ -143,39 +143,55 @@ def check_citations(
     """Keep only citations whose quote appears verbatim in the chunk they cite."""
     if not isinstance(citations, list):
         return []
+
     by_id = {chunk.id: chunk for chunk, _ in results}
     valid = []
-    seen = set()
+    seen: set[tuple[str, str]] = set()
     for citation in citations:
-        if not isinstance(citation, dict):
-            continue
-        chunk_id = citation.get("chunk_id")
-        if not isinstance(chunk_id, str):
-            continue
-        chunk = by_id.get(chunk_id)
-        quote = citation.get("quote", "")
-        normalized_quote = _squash(quote) if isinstance(quote, str) else ""
-        key = (chunk_id, normalized_quote)
-        # Whitespace-insensitive: models reflow line breaks when quoting.
-        if (
-            chunk
-            and isinstance(quote, str)
-            and len(quote) <= MAX_CITATION_QUOTE_CHARS
-            and len(normalized_quote) > 10
-            and len(normalized_quote) <= MAX_CITATION_QUOTE_CHARS
-            and normalized_quote in _squash(chunk.text)
-            and not sanitize_question(quote).redactions
-            and key not in seen
-        ):
-            seen.add(key)
-            valid.append(
-                {
-                    "chunk_id": chunk.id,
-                    "quote": quote,
-                    "source": f"{chunk.title}, {chunk.section}, p.{chunk.page}",
-                }
-            )
+        checked = _validate_citation(citation, by_id, seen)
+        if checked is not None:
+            valid.append(checked)
     return valid
+
+
+def _validate_citation(
+    citation: object,
+    chunks_by_id: dict[str, Chunk],
+    seen: set[tuple[str, str]],
+) -> dict | None:
+    """Validate one citation with readable, mechanical checks."""
+
+    if not isinstance(citation, dict):
+        return None
+
+    chunk_id = citation.get("chunk_id")
+    quote = citation.get("quote")
+    if not isinstance(chunk_id, str) or not isinstance(quote, str):
+        return None
+
+    chunk = chunks_by_id.get(chunk_id)
+    normalized_quote = _squash(quote)
+    if chunk is None:
+        return None
+    if not 10 < len(normalized_quote) <= MAX_CITATION_QUOTE_CHARS:
+        return None
+    if len(quote) > MAX_CITATION_QUOTE_CHARS:
+        return None
+    # Whitespace-insensitive: models often reflow line breaks when quoting.
+    if normalized_quote not in _squash(chunk.text):
+        return None
+    if sanitize_question(quote).redactions:
+        return None
+
+    key = (chunk_id, normalized_quote)
+    if key in seen:
+        return None
+    seen.add(key)
+    return {
+        "chunk_id": chunk.id,
+        "quote": quote,
+        "source": f"{chunk.title}, {chunk.section}, p.{chunk.page}",
+    }
 
 
 def _squash(text: str) -> str:

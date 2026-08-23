@@ -44,32 +44,32 @@ class Settings(BaseModel):
         max_length=120,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
     )
-    qdrant_timeout_seconds: int = 10
-    qdrant_index_timeout_seconds: int = 300
-    qdrant_replication_factor: int = 1
-    qdrant_write_consistency_factor: int = 1
+    qdrant_timeout_seconds: int = Field(default=10, gt=0)
+    qdrant_index_timeout_seconds: int = Field(default=300, gt=0)
+    qdrant_replication_factor: int = Field(default=1, ge=1)
+    qdrant_write_consistency_factor: int = Field(default=1, ge=1)
     qdrant_prefer_grpc: bool = False
 
-    embedding_model: str = DEFAULT_EMBEDDING_MODEL
-    caption_model: str = DEFAULT_CAPTION_MODEL
-    query_model: str = DEFAULT_QUERY_MODEL
-    rerank_model: str = DEFAULT_RERANK_MODEL
-    generation_model: str = DEFAULT_GENERATION_MODEL
-    evaluation_model: str = DEFAULT_EVALUATION_MODEL
+    embedding_model: str = Field(default=DEFAULT_EMBEDDING_MODEL, min_length=1)
+    caption_model: str = Field(default=DEFAULT_CAPTION_MODEL, min_length=1)
+    query_model: str = Field(default=DEFAULT_QUERY_MODEL, min_length=1)
+    rerank_model: str = Field(default=DEFAULT_RERANK_MODEL, min_length=1)
+    generation_model: str = Field(default=DEFAULT_GENERATION_MODEL, min_length=1)
+    evaluation_model: str = Field(default=DEFAULT_EVALUATION_MODEL, min_length=1)
 
     query_mode: QueryMode = "auto"
     rerank_enabled: bool = True
-    per_query_k: int = 20
-    candidate_k: int = 20
-    context_k: int = 6
+    per_query_k: int = Field(default=20, gt=0)
+    candidate_k: int = Field(default=20, gt=0)
+    context_k: int = Field(default=6, gt=0)
 
-    openai_timeout_seconds: float = 60.0
-    openai_max_retries: int = 2
-    download_timeout_seconds: float = 60.0
-    download_retries: int = 2
-    api_host: str = "127.0.0.1"
-    api_port: int = 8477
-    log_level: str = "INFO"
+    openai_timeout_seconds: float = Field(default=60.0, gt=0)
+    openai_max_retries: int = Field(default=2, ge=0)
+    download_timeout_seconds: float = Field(default=60.0, gt=0)
+    download_retries: int = Field(default=2, ge=0)
+    api_host: str = Field(default="127.0.0.1", min_length=1)
+    api_port: int = Field(default=8477, ge=1, le=65_535)
+    log_level: str = Field(default="INFO", min_length=1)
 
     @model_validator(mode="after")
     def validate_qdrant_security_and_consistency(self) -> Self:
@@ -216,7 +216,7 @@ def _boolean(name: str, default: bool) -> bool:
     if value is None or not value.strip():
         return default
     normalized = value.strip().lower()
-    if normalized in {"1", "true", "yes", "on", "auto"}:
+    if normalized in {"1", "true", "yes", "on"}:
         return True
     if normalized in {"0", "false", "no", "off"}:
         return False

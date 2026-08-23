@@ -59,9 +59,9 @@ def test_one_query_uses_the_backend_neutral_batch_contract():
 
     assert vector_store.calls == [(["original question"], 7)]
     assert [item.chunk.id for item in results] == ["tiny:1", "tiny:0"]
-    assert results[0].vector_score == pytest.approx(0.83)
-    assert results[0].guard_score == pytest.approx(0.83)
-    assert results[0].fusion_score == pytest.approx(1.0 / (retrieval.RRF_K + 1))
+    assert results[0].best_similarity == pytest.approx(0.83)
+    assert results[0].real_query_score == pytest.approx(0.83)
+    assert results[0].rrf_score == pytest.approx(1.0 / (retrieval.RRF_K + 1))
     assert results[0].query_kinds == ("original",)
 
 
@@ -92,7 +92,7 @@ def test_multiple_queries_use_one_batch_and_apply_query_kind_weights():
         "tiny:hyde",
     ]
     denominator = retrieval.RRF_K + 1
-    assert [item.fusion_score for item in results] == pytest.approx(
+    assert [item.rrf_score for item in results] == pytest.approx(
         [
             retrieval.QUERY_WEIGHTS["original"] / denominator,
             retrieval.QUERY_WEIGHTS["rewrite"] / denominator,
@@ -121,16 +121,16 @@ def test_rrf_deduplicates_orders_and_records_provenance():
     assert [item.chunk.id for item in results] == ["tiny:a", "tiny:b", "tiny:c"]
     assert len({item.chunk.id for item in results}) == 3
     by_id = {item.chunk.id: item for item in results}
-    assert by_id["tiny:a"].fusion_score == pytest.approx(
+    assert by_id["tiny:a"].rrf_score == pytest.approx(
         1.0 / (retrieval.RRF_K + 1) + 0.8 / (retrieval.RRF_K + 2)
     )
-    assert by_id["tiny:b"].fusion_score == pytest.approx(
+    assert by_id["tiny:b"].rrf_score == pytest.approx(
         1.0 / (retrieval.RRF_K + 2) + 0.8 / (retrieval.RRF_K + 1)
     )
     assert by_id["tiny:a"].query_kinds == ("original", "rewrite")
     assert by_id["tiny:b"].query_kinds == ("original", "rewrite")
     assert by_id["tiny:c"].query_kinds == ("rewrite",)
-    assert by_id["tiny:b"].vector_score == pytest.approx(0.95)
+    assert by_id["tiny:b"].best_similarity == pytest.approx(0.95)
 
 
 def test_candidate_cap_is_applied_after_fusion():
@@ -149,7 +149,7 @@ def test_candidate_cap_is_applied_after_fusion():
     assert [item.chunk.id for item in results] == ["tiny:0", "tiny:1"]
 
 
-def test_best_vector_score_is_separate_from_non_hyde_guard_score():
+def test_best_similarity_is_separate_from_real_query_score():
     shared = _chunk("tiny:shared")
     hyde_only = _chunk("tiny:hyde-only")
     variants = [
@@ -168,12 +168,12 @@ def test_best_vector_score_is_separate_from_non_hyde_guard_score():
     results = retrieval.retrieve(vector_store, variants)
     by_id = {item.chunk.id: item for item in results}
 
-    assert by_id["tiny:shared"].vector_score == pytest.approx(0.99)
-    assert by_id["tiny:shared"].guard_score == pytest.approx(0.62)
+    assert by_id["tiny:shared"].best_similarity == pytest.approx(0.99)
+    assert by_id["tiny:shared"].real_query_score == pytest.approx(0.62)
     assert by_id["tiny:shared"].query_kinds == ("hyde", "original", "rewrite")
-    assert by_id["tiny:hyde-only"].vector_score == pytest.approx(0.98)
-    assert math.isinf(by_id["tiny:hyde-only"].guard_score)
-    assert by_id["tiny:hyde-only"].guard_score < 0
+    assert by_id["tiny:hyde-only"].best_similarity == pytest.approx(0.98)
+    assert math.isinf(by_id["tiny:hyde-only"].real_query_score)
+    assert by_id["tiny:hyde-only"].real_query_score < 0
     scored_shared = next(
         score
         for chunk, score in retrieval.as_scored_chunks(results)

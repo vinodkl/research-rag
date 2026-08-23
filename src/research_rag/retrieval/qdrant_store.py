@@ -1,18 +1,12 @@
-"""The server-backed Qdrant vector-store implementation.
+"""Load and query the server-backed Qdrant vector store.
 
-Each ingestion writes a new physical collection, validates it, and then moves a
-stable alias in one atomic operation. The previous collection is retained so an
-operator can roll back the alias without re-embedding the corpus.
+Serving resolves the stable alias once, validates its collection contract, and
+pins that physical build for the process lifetime. Offline collection creation
+and alias publication live in :mod:`research_rag.retrieval.qdrant_index`.
 """
 
-import hashlib
-import json
 import math
-import time
 import uuid
-from contextlib import suppress
-from dataclasses import asdict
-from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Literal
 
@@ -48,150 +42,6 @@ class QdrantManifest(BaseModel):
     created_at: str
 
 
-def build(
-    chunks: list[Chunk],
-    *,
-    corpus_sha256: str | None = None,
-    settings: Settings,
-    client: QdrantClient | None = None,
-) -> QdrantManifest:
-    """Build, validate, then atomically publish one Qdrant collection."""
-
-    if not chunks:
-        raise ValueError("cannot build an empty index")
-    chunk_ids = [chunk.id for chunk in chunks]
-    if len(chunk_ids) != len(set(chunk_ids)):
-        raise ValueError("chunk ids must be unique")
-
-    # Fail before an expensive corpus-wide embedding call when the configured
-    # service, credentials, or alias cannot be used.
-    active_client = client or qdrant_client(settings)
-    _check_server_ready(active_client)
-    initial_aliases = _aliases(active_client)
-    if (
-        settings.qdrant_collection not in initial_aliases
-        and active_client.collection_exists(settings.qdrant_collection)
-    ):
-        raise IndexUnavailable(
-            "Qdrant alias name collides with an existing physical collection"
-        )
-
-    vectors = embed([chunk.text for chunk in chunks], settings=settings)
-    if (
-        vectors.ndim != 2
-        or vectors.shape[0] != len(chunks)
-        or vectors.shape[1] < 1
-        or not np.isfinite(vectors).all()
-    ):
-        raise ValueError("embedding response has an unexpected shape or value")
-
-    chunks_bytes = json.dumps(
-        [asdict(chunk) for chunk in chunks], ensure_ascii=False, separators=(",", ":")
-    ).encode("utf-8")
-    chunks_sha256 = hashlib.sha256(chunks_bytes).hexdigest()
-    build_id = uuid.uuid4().hex
-    physical_name = f"{settings.qdrant_collection}__{build_id}"
-    manifest = QdrantManifest(
-        schema_version=SCHEMA_VERSION,
-        backend="qdrant",
-        build_id=build_id,
-        embedding_model=settings.embedding_model,
-        vector_dimension=int(vectors.shape[1]),
-        chunk_count=len(chunks),
-        corpus_sha256=corpus_sha256 or chunks_sha256,
-        chunks_sha256=chunks_sha256,
-        collection_name=physical_name,
-        alias_name=settings.qdrant_collection,
-        created_at=datetime.now(UTC).isoformat(),
-    )
-
-    created = active_client.create_collection(
-        collection_name=physical_name,
-        vectors_config=models.VectorParams(
-            size=manifest.vector_dimension,
-            distance=models.Distance.COSINE,
-        ),
-        metadata=manifest.model_dump(),
-        replication_factor=settings.qdrant_replication_factor,
-        write_consistency_factor=settings.qdrant_write_consistency_factor,
-        timeout=settings.qdrant_timeout_seconds,
-    )
-    if not created:
-        raise IndexUnavailable("Qdrant did not create the new collection")
-
-    # Nothing below this point can affect the currently published alias until
-    # the final update_collection_aliases call.
-    try:
-        active_client.upload_points(
-            collection_name=physical_name,
-            points=(
-                models.PointStruct(
-                    id=_point_id(chunk.id),
-                    vector=vector.tolist(),
-                    payload=asdict(chunk),
-                )
-                for chunk, vector in zip(chunks, vectors, strict=True)
-            ),
-            batch_size=64,
-            max_retries=3,
-            wait=True,
-        )
-        _validate_collection(
-            active_client,
-            physical_name,
-            settings,
-            expected=manifest,
-            exact_count=True,
-            require_green=False,
-        )
-        _validate_sample_payload(active_client, physical_name, chunks[0])
-        _wait_until_green(active_client, physical_name, settings)
-    except Exception:
-        _delete_unpublished(active_client, physical_name, settings)
-        raise
-
-    try:
-        publish_aliases = _aliases(active_client)
-    except Exception:
-        _delete_unpublished(active_client, physical_name, settings)
-        raise
-    if publish_aliases.get(settings.qdrant_collection) != initial_aliases.get(
-        settings.qdrant_collection
-    ):
-        _delete_unpublished(active_client, physical_name, settings)
-        raise IndexUnavailable("Qdrant alias changed during ingestion; retry the build")
-
-    operations: list[models.AliasOperations] = []
-    if settings.qdrant_collection in publish_aliases:
-        operations.append(
-            models.DeleteAliasOperation(
-                delete_alias=models.DeleteAlias(alias_name=settings.qdrant_collection)
-            )
-        )
-    operations.append(
-        models.CreateAliasOperation(
-            create_alias=models.CreateAlias(
-                collection_name=physical_name,
-                alias_name=settings.qdrant_collection,
-            )
-        )
-    )
-
-    # Do not delete the new collection if this call times out: the server may
-    # have completed the atomic switch even when the client missed the reply.
-    published = active_client.update_collection_aliases(
-        change_aliases_operations=operations,
-        timeout=settings.qdrant_timeout_seconds,
-    )
-    if not published:
-        raise IndexUnavailable("Qdrant did not publish the new collection alias")
-    if _aliases(active_client).get(settings.qdrant_collection) != physical_name:
-        raise IndexUnavailable("Qdrant alias publication could not be verified")
-
-    _load_cached.cache_clear()
-    return manifest
-
-
 def load(settings: Settings) -> "QdrantVectorStore":
     """Load and validate the collection behind the configured stable alias."""
 
@@ -211,6 +61,7 @@ def _load_cached(settings: Settings) -> "QdrantVectorStore":
     physical_name = aliases.get(settings.qdrant_collection)
     if physical_name is None:
         raise IndexUnavailable("no Qdrant index found; run: research-rag ingest")
+
     manifest = _validate_collection(
         active_client,
         settings.qdrant_collection,
@@ -228,7 +79,7 @@ def _load_cached(settings: Settings) -> "QdrantVectorStore":
 
 
 class QdrantVectorStore:
-    """A validated Qdrant alias implementing the shared search contract."""
+    """A validated physical collection implementing the shared search API."""
 
     backend = "qdrant"
 
@@ -260,9 +111,8 @@ class QdrantVectorStore:
 
         try:
             responses = self.client.query_batch_points(
-                # Pin the validated physical build for this process. The alias
-                # selects a build at startup; rolling restarts move replicas to
-                # a newly published build without changing one under a request.
+                # Pin the validated physical build. A rolling restart can pick
+                # up a new alias target without changing one under a request.
                 collection_name=self.manifest.collection_name,
                 requests=[
                     models.QueryRequest(
@@ -287,7 +137,7 @@ class QdrantVectorStore:
             raise IndexUnavailable("Qdrant query failed") from exc
 
     def readiness(self) -> dict[str, object]:
-        """Check server/collection state without exposing connection details."""
+        """Check server and collection state without exposing connection data."""
 
         _check_server_ready(self.client)
         info = self.client.get_collection(self.manifest.collection_name)
@@ -369,45 +219,10 @@ def _scored_chunk(point: models.ScoredPoint) -> tuple[Chunk, float]:
         raise IndexUnavailable("Qdrant returned an invalid chunk payload") from exc
 
 
-def _validate_sample_payload(
-    client: QdrantClient, collection_name: str, expected: Chunk
-) -> None:
-    try:
-        records = client.retrieve(
-            collection_name,
-            ids=[_point_id(expected.id)],
-            with_payload=True,
-            with_vectors=False,
-        )
-        if len(records) != 1 or records[0].payload is None:
-            raise ValueError("sample point is missing")
-        if Chunk(**records[0].payload) != expected:
-            raise ValueError("sample payload changed during storage")
-    except Exception as exc:
-        raise IndexUnavailable("Qdrant payload validation failed") from exc
-
-
-def _wait_until_green(
-    client: QdrantClient, collection_name: str, settings: Settings
-) -> None:
-    deadline = time.monotonic() + settings.qdrant_index_timeout_seconds
-    while True:
-        status = client.get_collection(collection_name).status
-        if status == models.CollectionStatus.GREEN:
-            return
-        if status == models.CollectionStatus.RED:
-            raise IndexUnavailable("Qdrant collection entered a failed state")
-        if time.monotonic() >= deadline:
-            raise IndexUnavailable("Qdrant collection did not become ready in time")
-        time.sleep(0.25)
-
-
 def _check_server_ready(client: QdrantClient) -> None:
-    try:
-        client.http.service_api.readyz()
-    except NotImplementedError:
-        # In-memory Qdrant is permitted only in offline tests and has no REST API.
-        return
+    """Use the public SDK surface for both remote and in-memory clients."""
+
+    client.info()
 
 
 def _aliases(client: QdrantClient) -> dict[str, str]:
@@ -419,12 +234,3 @@ def _aliases(client: QdrantClient) -> dict[str, str]:
 
 def _point_id(chunk_id: str) -> uuid.UUID:
     return uuid.uuid5(POINT_NAMESPACE, chunk_id)
-
-
-def _delete_unpublished(
-    client: QdrantClient, collection_name: str, settings: Settings
-) -> None:
-    with suppress(Exception):
-        client.delete_collection(
-            collection_name, timeout=settings.qdrant_timeout_seconds
-        )

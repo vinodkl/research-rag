@@ -43,6 +43,24 @@ request -> guards -> query plan -> search/fuse -> rerank -> generate -> guards
 The code intentionally avoids a dependency-injection framework. Optional test
 clients and ordinary Python functions are enough at this scale.
 
+## Data shapes through one request
+
+```text
+question: str
+  -> sanitized: SanitizedQuestion
+  -> variants: list[QueryVariant]
+  -> candidates: list[Candidate]
+  -> final_contexts: list[tuple[Chunk, float]]
+  -> generated: {answer, citations}
+  -> public result: Answer
+```
+
+`Candidate` belongs to broad retrieval. It records one real chunk, the best
+similarity from any query view, the best non-HyDE similarity used by the
+evidence guard, and an RRF ordering score. `final_contexts` is deliberately a
+different type and name: it is the small, approved evidence set shared by
+generation, citation validation, traces, and evaluation.
+
 ## Retrieval invariants
 
 1. The original, sanitized question is always searched.
@@ -95,6 +113,9 @@ planned ingestion should upgrade it.
 by ingestion. A build named like `research-rag__<build-id>` contains vectors,
 chunk payloads, and collection metadata recording schema version, embedding
 model, dimension, chunk count, corpus digest, and build ID.
+
+The code mirrors the two lifecycles: `qdrant_index.py` owns offline creation and
+publication, while `qdrant_store.py` owns online loading and search.
 
 Ingestion follows this sequence:
 

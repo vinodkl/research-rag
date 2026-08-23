@@ -16,7 +16,7 @@ import re
 import shutil
 import tempfile
 import uuid
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -47,6 +47,15 @@ class IndexManifest(BaseModel):
     corpus_sha256: str
     chunks_sha256: str
     created_at: str
+
+
+@dataclass(frozen=True)
+class LoadedFaissBuild:
+    """Validated files behind the active ``CURRENT`` pointer."""
+
+    index: faiss.Index
+    chunks: list[Chunk]
+    build_id: str
 
 
 def build(
@@ -118,11 +127,12 @@ def build(
 def load(settings: Settings) -> "FaissVectorStore":
     """Load and validate the active build, cached until the process restarts."""
 
-    index, chunks, build_id = _load_cached(
-        str(settings.index_dir), settings.embedding_model
-    )
+    loaded = _load_cached(str(settings.index_dir), settings.embedding_model)
     return FaissVectorStore(
-        index=index, chunks=chunks, settings=settings, build_id=build_id
+        index=loaded.index,
+        chunks=loaded.chunks,
+        settings=settings,
+        build_id=loaded.build_id,
     )
 
 
@@ -133,7 +143,7 @@ def clear_cache() -> None:
 
 
 @lru_cache(maxsize=4)
-def _load_cached(index_dir_text: str, embedding_model: str):
+def _load_cached(index_dir_text: str, embedding_model: str) -> LoadedFaissBuild:
     index_dir = Path(index_dir_text)
     current = index_dir / "CURRENT"
     try:
@@ -144,7 +154,7 @@ def _load_cached(index_dir_text: str, embedding_model: str):
             index, chunks = _load_build(
                 index_dir / "builds" / build_id, embedding_model
             )
-            return index, chunks, build_id
+            return LoadedFaissBuild(index, chunks, build_id)
 
         # Version 1 compatibility: no manifest/model check was recorded. Counts
         # and dimensions are still validated before serving.
@@ -152,7 +162,7 @@ def _load_cached(index_dir_text: str, embedding_model: str):
         legacy_chunks = index_dir / "chunks.json"
         if legacy_index.is_file() and legacy_chunks.is_file():
             index, chunks = _load_pair(legacy_index, legacy_chunks)
-            return index, chunks, "legacy"
+            return LoadedFaissBuild(index, chunks, "legacy")
     except IndexUnavailable:
         raise
     except Exception as exc:

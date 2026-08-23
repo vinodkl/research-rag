@@ -45,9 +45,9 @@ def build(
 
         return faiss_store.build(chunks, corpus_sha256=corpus_sha256, settings=active)
 
-    from research_rag.retrieval import qdrant_store
+    from research_rag.retrieval import qdrant_index
 
-    return qdrant_store.build(chunks, corpus_sha256=corpus_sha256, settings=active)
+    return qdrant_index.build(chunks, corpus_sha256=corpus_sha256, settings=active)
 
 
 def load(settings: Settings | None = None) -> VectorStore:

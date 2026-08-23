@@ -2,7 +2,7 @@
 
 import pytest
 
-from research_rag.retrieval import faiss_store, qdrant_store, store
+from research_rag.retrieval import faiss_store, qdrant_index, qdrant_store, store
 
 
 def test_load_dispatches_only_to_the_configured_qdrant_backend(
@@ -36,7 +36,7 @@ def test_build_dispatches_only_to_the_configured_faiss_backend(
         raise AssertionError("FAISS selection must not call Qdrant")
 
     monkeypatch.setattr(faiss_store, "build", fake_build)
-    monkeypatch.setattr(qdrant_store, "build", unexpected)
+    monkeypatch.setattr(qdrant_index, "build", unexpected)
 
     assert store.build(chunks, corpus_sha256="a" * 64, settings=settings) is expected
     assert calls == [(chunks, "a" * 64, settings)]

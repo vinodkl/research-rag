@@ -90,7 +90,9 @@ config/
 src/research_rag/
   api/                        typed HTTP boundary and tiny static UI
   ingestion/                  download -> parse -> chunk -> index
-  retrieval/                  embed -> plan -> FAISS/Qdrant -> fuse -> rerank
+  retrieval/                  query planning, stores, rank fusion, and reranking
+    qdrant_store.py           online load, validation, and search
+    qdrant_index.py           offline build, validation, and alias publication
   evaluation/                 transparent judges and report runner
   pipeline.py                 online stages in one readable sequence
   generation.py               grounded answer + structured citations
@@ -108,8 +110,9 @@ uv.lock                       reproducible runtime and CI dependency graph
 ```
 
 Start with [`pipeline.py`](src/research_rag/pipeline.py), then open one stage at
-a time. [`docs/architecture.md`](docs/architecture.md) explains why each boundary
-exists.
+a time. [`docs/teaching.md`](docs/teaching.md) provides a reading order and a
+60-minute lesson; [`docs/architecture.md`](docs/architecture.md) explains why
+each boundary exists.
 
 ## Configuration
 

@@ -13,6 +13,7 @@ from research_rag.retrieval.reranker import (
     RankingOutput,
     rerank,
 )
+from research_rag.settings import Settings
 
 
 def _chunk(identifier: str, text: str) -> Chunk:
@@ -220,12 +221,14 @@ def test_empty_or_zero_limit_makes_no_model_call(candidates, top_k):
     assert client.responses.calls == []
 
 
-def test_model_can_be_overridden_without_changing_code(monkeypatch):
+def test_request_settings_select_the_model_without_rereading_environment(monkeypatch):
     first = _chunk("tiny:0", "first")
-    monkeypatch.setenv("OPENAI_RERANK_MODEL", "gpt-test-reranker")
+    monkeypatch.setenv("OPENAI_RERANK_MODEL", "gpt-request-reranker")
+    settings = Settings.from_env()
+    monkeypatch.setenv("OPENAI_RERANK_MODEL", "gpt-later-environment")
     client = FakeClient(_ranking((first.id, "direct")))
 
-    result = rerank("question", [(first, 0.8)], client=client)
+    result = rerank("question", [(first, 0.8)], client=client, settings=settings)
 
-    assert result.model == "gpt-test-reranker"
-    assert client.responses.calls[0]["model"] == "gpt-test-reranker"
+    assert result.model == "gpt-request-reranker"
+    assert client.responses.calls[0]["model"] == "gpt-request-reranker"

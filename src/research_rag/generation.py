@@ -14,7 +14,7 @@ import json
 
 from research_rag.clients import openai_client
 from research_rag.models import Chunk
-from research_rag.settings import DEFAULT_GENERATION_MODEL, get_settings
+from research_rag.settings import DEFAULT_GENERATION_MODEL, Settings, get_settings
 
 MODEL = DEFAULT_GENERATION_MODEL
 
@@ -52,18 +52,22 @@ SCHEMA = {
 
 
 def generate(
-    question: str, results: list[tuple["Chunk", float]], *, client=None
+    question: str,
+    results: list[tuple["Chunk", float]],
+    *,
+    client=None,
+    settings: Settings | None = None,
 ) -> dict:
     """Build the prompt from the retrieved chunks, get a structured answer back."""
-    settings = get_settings()
-    active_client = client or openai_client(settings)
+    active_settings = settings if settings is not None else get_settings()
+    active_client = client if client is not None else openai_client(active_settings)
 
     passages = "\n\n".join(
         f"[id: {chunk.id}] {chunk.title} - {chunk.section} (p.{chunk.page})\n{chunk.text}"
         for chunk, _ in results
     )
     completion = active_client.chat.completions.create(  # type: ignore[call-overload]
-        model=settings.generation_model,
+        model=active_settings.generation_model,
         messages=[
             {"role": "system", "content": SYSTEM},
             {

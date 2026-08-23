@@ -6,7 +6,7 @@ from qdrant_client import QdrantClient
 
 from research_rag.errors import IndexUnavailable
 from research_rag.ingestion.chunking import Chunk
-from research_rag.retrieval import qdrant_store
+from research_rag.retrieval import qdrant_index, qdrant_store
 
 
 def _chunk(identifier: str, text: str, *, page: int = 1) -> Chunk:
@@ -61,10 +61,11 @@ def test_build_load_search_and_readiness_are_backend_neutral(
         embedding_calls.append(texts)
         return np.asarray([_vector(text) for text in texts], dtype="float32")
 
+    monkeypatch.setattr(qdrant_index, "embed", fake_embeddings)
     monkeypatch.setattr(qdrant_store, "embed", fake_embeddings)
     monkeypatch.setattr(qdrant_store, "qdrant_client", lambda _settings: qdrant_client)
 
-    manifest = qdrant_store.build(
+    manifest = qdrant_index.build(
         chunks,
         corpus_sha256="a" * 64,
         settings=settings,
@@ -105,10 +106,10 @@ def test_duplicate_chunk_ids_are_rejected_before_embedding(
     def unexpected(*_args, **_kwargs):
         raise AssertionError("duplicate ids must fail before model usage")
 
-    monkeypatch.setattr(qdrant_store, "embed", unexpected)
+    monkeypatch.setattr(qdrant_index, "embed", unexpected)
 
     with pytest.raises(ValueError, match="chunk ids must be unique"):
-        qdrant_store.build(
+        qdrant_index.build(
             [duplicate, _chunk("paper:duplicate", "different text")],
             settings=settings,
             client=qdrant_client,
@@ -123,15 +124,15 @@ def test_qdrant_preflight_fails_before_expensive_embedding(
     def unexpected(*_args, **_kwargs):
         raise AssertionError("embedding must not run after a failed preflight")
 
-    monkeypatch.setattr(qdrant_store, "embed", unexpected)
+    monkeypatch.setattr(qdrant_index, "embed", unexpected)
     monkeypatch.setattr(
-        qdrant_store,
+        qdrant_index,
         "_check_server_ready",
         lambda _client: (_ for _ in ()).throw(ConnectionError("offline")),
     )
 
     with pytest.raises(ConnectionError, match="offline"):
-        qdrant_store.build(
+        qdrant_index.build(
             [_chunk("paper:alpha", "alpha evidence")],
             settings=settings,
             client=qdrant_client,
@@ -146,14 +147,14 @@ def test_load_rejects_an_index_built_with_another_embedding_model(
         embedding_model="offline-embedding-v1",
     )
     monkeypatch.setattr(
-        qdrant_store,
+        qdrant_index,
         "embed",
         lambda texts, **_kwargs: np.asarray(
             [_vector(text) for text in texts], dtype="float32"
         ),
     )
     monkeypatch.setattr(qdrant_store, "qdrant_client", lambda _settings: qdrant_client)
-    qdrant_store.build(
+    qdrant_index.build(
         [_chunk("paper:alpha", "alpha evidence")],
         settings=settings,
         client=qdrant_client,
@@ -174,19 +175,19 @@ def test_alias_switch_is_atomic_and_keeps_the_previous_collection_for_rollback(
         embedding_model="offline-embedding-v1",
     )
     monkeypatch.setattr(
-        qdrant_store,
+        qdrant_index,
         "embed",
         lambda texts, **_kwargs: np.asarray(
             [_vector(text) for text in texts], dtype="float32"
         ),
     )
 
-    first = qdrant_store.build(
+    first = qdrant_index.build(
         [_chunk("paper:alpha", "alpha evidence")],
         settings=settings,
         client=qdrant_client,
     )
-    second = qdrant_store.build(
+    second = qdrant_index.build(
         [_chunk("paper:beta", "beta evidence")],
         settings=settings,
         client=qdrant_client,
@@ -212,7 +213,7 @@ def test_loaded_process_pins_its_validated_build_until_restart(
         embedding_model="offline-embedding-v1",
     )
     monkeypatch.setattr(
-        qdrant_store,
+        qdrant_index,
         "embed",
         lambda texts, **_kwargs: np.asarray(
             [_vector(text) for text in texts], dtype="float32"
@@ -222,9 +223,16 @@ def test_loaded_process_pins_its_validated_build_until_restart(
     alpha = _chunk("paper:alpha", "alpha evidence")
     beta = _chunk("paper:beta", "beta evidence")
 
-    qdrant_store.build([alpha], settings=settings, client=qdrant_client)
+    monkeypatch.setattr(
+        qdrant_store,
+        "embed",
+        lambda texts, **_kwargs: np.asarray(
+            [_vector(text) for text in texts], dtype="float32"
+        ),
+    )
+    qdrant_index.build([alpha], settings=settings, client=qdrant_client)
     old_process = qdrant_store.load(settings)
-    qdrant_store.build([beta], settings=settings, client=qdrant_client)
+    qdrant_index.build([beta], settings=settings, client=qdrant_client)
     restarted_process = qdrant_store.load(settings)
 
     assert old_process.search_many(["alpha question"], k=1)[0][0][0] == alpha
@@ -240,13 +248,13 @@ def test_failed_alias_publication_preserves_the_previously_published_alias(
         embedding_model="offline-embedding-v1",
     )
     monkeypatch.setattr(
-        qdrant_store,
+        qdrant_index,
         "embed",
         lambda texts, **_kwargs: np.asarray(
             [_vector(text) for text in texts], dtype="float32"
         ),
     )
-    first = qdrant_store.build(
+    first = qdrant_index.build(
         [_chunk("paper:alpha", "alpha evidence")],
         settings=settings,
         client=qdrant_client,
@@ -258,7 +266,7 @@ def test_failed_alias_publication_preserves_the_previously_published_alias(
     )
 
     with pytest.raises(IndexUnavailable, match="did not publish"):
-        qdrant_store.build(
+        qdrant_index.build(
             [_chunk("paper:beta", "beta evidence")],
             settings=settings,
             client=qdrant_client,
@@ -280,18 +288,18 @@ def test_concurrent_alias_change_aborts_and_removes_the_unpublished_build(
         embedding_model="offline-embedding-v1",
     )
     monkeypatch.setattr(
-        qdrant_store,
+        qdrant_index,
         "embed",
         lambda texts, **_kwargs: np.asarray(
             [_vector(text) for text in texts], dtype="float32"
         ),
     )
-    first = qdrant_store.build(
+    first = qdrant_index.build(
         [_chunk("paper:alpha", "alpha evidence")],
         settings=settings,
         client=qdrant_client,
     )
-    real_aliases = qdrant_store._aliases
+    real_aliases = qdrant_index._aliases
     calls = 0
 
     def changed_aliases(client):
@@ -301,10 +309,10 @@ def test_concurrent_alias_change_aborts_and_removes_the_unpublished_build(
             return real_aliases(client)
         return {settings.qdrant_collection: "another-job-build"}
 
-    monkeypatch.setattr(qdrant_store, "_aliases", changed_aliases)
+    monkeypatch.setattr(qdrant_index, "_aliases", changed_aliases)
 
     with pytest.raises(IndexUnavailable, match="changed during ingestion"):
-        qdrant_store.build(
+        qdrant_index.build(
             [_chunk("paper:beta", "beta evidence")],
             settings=settings,
             client=qdrant_client,
@@ -330,13 +338,20 @@ def test_invalid_point_payload_fails_closed(
     )
     chunk = _chunk("paper:alpha", "alpha evidence")
     monkeypatch.setattr(
+        qdrant_index,
+        "embed",
+        lambda texts, **_kwargs: np.asarray(
+            [_vector(text) for text in texts], dtype="float32"
+        ),
+    )
+    monkeypatch.setattr(
         qdrant_store,
         "embed",
         lambda texts, **_kwargs: np.asarray(
             [_vector(text) for text in texts], dtype="float32"
         ),
     )
-    manifest = qdrant_store.build([chunk], settings=settings, client=qdrant_client)
+    manifest = qdrant_index.build([chunk], settings=settings, client=qdrant_client)
     qdrant_client.overwrite_payload(
         collection_name=manifest.collection_name,
         payload={"id": ["not-a-string"]},

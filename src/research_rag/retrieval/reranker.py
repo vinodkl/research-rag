@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict
 
 from research_rag.clients import openai_client
 from research_rag.models import Chunk
-from research_rag.settings import DEFAULT_RERANK_MODEL, get_settings
+from research_rag.settings import DEFAULT_RERANK_MODEL, Settings, get_settings
 
 DEFAULT_MODEL = DEFAULT_RERANK_MODEL
 PROVIDER = "openai"
@@ -63,6 +63,7 @@ def rerank(
     top_k: int = 6,
     *,
     client=None,
+    settings: Settings | None = None,
 ) -> RerankResult:
     """Return the most relevant chunks, or the vector order if OpenAI fails."""
 
@@ -71,10 +72,10 @@ def rerank(
     if limit == 0:
         return _fallback(unique, limit, error=None, model=None)
 
-    settings = get_settings()
-    model = settings.rerank_model
+    active_settings = settings if settings is not None else get_settings()
+    model = active_settings.rerank_model
     try:
-        active_client = client if client is not None else openai_client(settings)
+        active_client = client if client is not None else openai_client(active_settings)
         ranking = _rank(active_client, question, unique, model=model)
         results = _validate_and_select(ranking, unique, limit)
         return RerankResult(results, applied=True, model=model)

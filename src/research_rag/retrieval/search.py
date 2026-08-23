@@ -10,7 +10,7 @@ document can improve recall, but neither is trusted as evidence: only real
 indexed chunks are returned to generation.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from research_rag.models import Chunk
 from research_rag.retrieval import store
@@ -22,13 +22,45 @@ QUERY_WEIGHTS = {"original": 1.0, "rewrite": 0.8, "hyde": 0.7}
 
 @dataclass(frozen=True)
 class Candidate:
-    """One real chunk found through one or more query variants."""
+    """One real chunk found through one or more query variants.
+
+    ``best_similarity`` may come from any query, including HyDE.
+    ``real_query_score`` excludes HyDE and is safe for the evidence guard.
+    ``rrf_score`` combines ranks and is used only to order candidates.
+    """
 
     chunk: Chunk
-    vector_score: float
-    guard_score: float
-    fusion_score: float
+    best_similarity: float
+    real_query_score: float
+    rrf_score: float
     query_kinds: tuple[str, ...]
+
+
+@dataclass
+class _CandidateAccumulator:
+    """Mutable scores while several ranked lists are being fused."""
+
+    chunk: Chunk
+    best_similarity: float = float("-inf")
+    real_query_score: float = float("-inf")
+    rrf_score: float = 0.0
+    query_kinds: set[str] = field(default_factory=set)
+
+    def add(self, *, kind: str, rank: int, similarity: float) -> None:
+        self.best_similarity = max(self.best_similarity, similarity)
+        if kind != "hyde":
+            self.real_query_score = max(self.real_query_score, similarity)
+        self.rrf_score += QUERY_WEIGHTS.get(kind, 0.7) / (RRF_K + rank)
+        self.query_kinds.add(kind)
+
+    def freeze(self) -> Candidate:
+        return Candidate(
+            chunk=self.chunk,
+            best_similarity=float(self.best_similarity),
+            real_query_score=float(self.real_query_score),
+            rrf_score=float(self.rrf_score),
+            query_kinds=tuple(sorted(self.query_kinds)),
+        )
 
 
 def retrieve(
@@ -41,8 +73,9 @@ def retrieve(
 ) -> list[Candidate]:
     """Retrieve for each query variant and fuse the unique chunk rankings.
 
-    ``vector_score`` is the best cosine score seen for a chunk and is kept for
-    the evidence floor. ``fusion_score`` is used only for ordering candidates.
+    ``best_similarity`` is the best cosine score from any query view.
+    ``real_query_score`` excludes HyDE and is safe for the evidence floor.
+    ``rrf_score`` is used only for ordering candidates.
     """
     if per_query_k < 1 or candidate_k < 1:
         return []
@@ -50,8 +83,24 @@ def retrieve(
     if not variants:
         return []
 
-    # Every backend receives the same batch. This is one OpenAI embedding call
-    # and, for Qdrant, one server request whether the plan has one or four views.
+    searched_variants, ranked_lists = _search_variants(
+        vector_store,
+        variants,
+        per_query_k=per_query_k,
+        diagnostics=diagnostics,
+    )
+    return _fuse_rankings(searched_variants, ranked_lists)[:candidate_k]
+
+
+def _search_variants(
+    vector_store: store.VectorStore,
+    variants: list[QueryVariant],
+    *,
+    per_query_k: int,
+    diagnostics: dict[str, str] | None,
+) -> tuple[list[QueryVariant], list[list[tuple[Chunk, float]]]]:
+    """Search one batch; retry only the trusted original if expansion fails."""
+
     try:
         ranked_lists = vector_store.search_many(
             [variant.text for variant in variants], k=per_query_k
@@ -74,47 +123,30 @@ def retrieve(
             raise ValueError(
                 "original-query retry returned an invalid ranking"
             ) from exc
+    return variants, ranked_lists
 
-    # chunk id -> mutable aggregate kept local so Candidate can stay frozen.
-    combined: dict[str, dict] = {}
+
+def _fuse_rankings(
+    variants: list[QueryVariant],
+    ranked_lists: list[list[tuple[Chunk, float]]],
+) -> list[Candidate]:
+    """Fuse ranks without comparing cosine scores across different queries."""
+
+    combined: dict[str, _CandidateAccumulator] = {}
     for variant, ranked in zip(variants, ranked_lists, strict=True):
-        weight = QUERY_WEIGHTS.get(variant.kind, 0.7)
-        for rank, (chunk, vector_score) in enumerate(ranked, start=1):
-            item = combined.setdefault(
-                chunk.id,
-                {
-                    "chunk": chunk,
-                    "vector_score": vector_score,
-                    "guard_score": float("-inf"),
-                    "fusion_score": 0.0,
-                    "query_kinds": set(),
-                },
+        for rank, (chunk, similarity) in enumerate(ranked, start=1):
+            accumulator = combined.setdefault(
+                chunk.id, _CandidateAccumulator(chunk=chunk)
             )
-            item["vector_score"] = max(item["vector_score"], vector_score)
-            # A fabricated HyDE document can drift toward a plausible but
-            # unrelated neighborhood. It helps ranking, but cannot by itself
-            # satisfy the evidence-quality guard.
-            if variant.kind != "hyde":
-                item["guard_score"] = max(item["guard_score"], vector_score)
-            item["fusion_score"] += weight / (RRF_K + rank)
-            item["query_kinds"].add(variant.kind)
+            accumulator.add(kind=variant.kind, rank=rank, similarity=similarity)
 
-    candidates = [
-        Candidate(
-            chunk=item["chunk"],
-            vector_score=float(item["vector_score"]),
-            guard_score=float(item["guard_score"]),
-            fusion_score=float(item["fusion_score"]),
-            query_kinds=tuple(sorted(item["query_kinds"])),
-        )
-        for item in combined.values()
-    ]
+    candidates = [item.freeze() for item in combined.values()]
     candidates.sort(
-        key=lambda item: (item.fusion_score, item.vector_score), reverse=True
+        key=lambda item: (item.rrf_score, item.best_similarity), reverse=True
     )
-    return candidates[:candidate_k]
+    return candidates
 
 
 def as_scored_chunks(candidates: list[Candidate]) -> list[tuple[Chunk, float]]:
     """Adapter for reranking/generation while retaining trace data separately."""
-    return [(candidate.chunk, candidate.vector_score) for candidate in candidates]
+    return [(candidate.chunk, candidate.best_similarity) for candidate in candidates]

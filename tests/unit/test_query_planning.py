@@ -11,6 +11,7 @@ from research_rag.retrieval.query_planning import (
     expand,
     should_expand,
 )
+from research_rag.settings import Settings
 
 
 class FakeResponses:
@@ -185,14 +186,16 @@ def test_schema_bounds_each_rewrite_before_the_response_is_generated():
     assert schema["properties"]["rewrites"]["items"]["maxLength"] == MAX_VARIANT_CHARS
 
 
-def test_model_can_be_overridden_without_changing_code(monkeypatch):
-    monkeypatch.setenv("OPENAI_QUERY_MODEL", "gpt-test-query")
+def test_request_settings_select_the_model_without_rereading_environment(monkeypatch):
+    monkeypatch.setenv("OPENAI_QUERY_MODEL", "gpt-request-query")
+    settings = Settings.from_env()
+    monkeypatch.setenv("OPENAI_QUERY_MODEL", "gpt-later-environment")
     client = FakeClient(_output(["retrieval query"]))
 
-    result = expand("Explain retrieval.", "rewrite", client=client)
+    result = expand("Explain retrieval.", "rewrite", client=client, settings=settings)
 
-    assert result.model == "gpt-test-query"
-    assert client.responses.calls[0]["model"] == "gpt-test-query"
+    assert result.model == "gpt-request-query"
+    assert client.responses.calls[0]["model"] == "gpt-request-query"
 
 
 def test_all_supported_modes_keep_original_first():
@@ -210,3 +213,22 @@ def test_zero_rewrite_limit_skips_a_noop_model_call():
 
     assert result.variants == [QueryVariant("Explain retrieval.", "original")]
     assert client.responses.calls == []
+
+
+def test_zero_rewrite_limit_in_hybrid_mode_still_requests_hyde():
+    passage = "Dense retrieval compares an embedded query with indexed passages."
+    client = FakeClient(_output(hyde_passage=passage))
+
+    result = expand("Explain retrieval.", "hybrid", client=client, max_rewrites=0)
+
+    assert result.variants == [
+        QueryVariant("Explain retrieval.", "original"),
+        QueryVariant(passage, "hyde"),
+    ]
+    assert result.strategy_status == {
+        "rewrite": "not-requested",
+        "hyde": "applied",
+    }
+    request = json.loads(client.responses.calls[0]["input"])
+    assert request["create_rewrites"] is False
+    assert request["create_hyde_passage"] is True
