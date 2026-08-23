@@ -1,5 +1,7 @@
 # Environment and secrets
 .env
+.env.*
+!.env.example
 .venv/
 
 # Data: PDFs, OCR caches, indexes, run reports. All reproducible from corpus.yaml.
@@ -17,3 +19,9 @@ __pycache__/
 htmlcov/
 dist/
 build/
+
+# Local editor and operating-system metadata
+.DS_Store
+.idea/
+.vscode/
+.claude/

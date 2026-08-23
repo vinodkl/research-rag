@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: python -m pip install uv==0.12.5 && uv sync --locked --extra dev
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Offline tests
+        run: uv run pytest --cov=research_rag --cov-report=term-missing --cov-fail-under=75
+
+      - name: Build wheel and source distribution
+        run: uv run python -m build
+
+      - name: Smoke-test the wheel outside the checkout
+        shell: bash
+        run: |
+          python -m venv /tmp/research-rag-wheel
+          /tmp/research-rag-wheel/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/research-rag-wheel/bin/research-rag --help
+          /tmp/research-rag-wheel/bin/research-rag ingest --help
+          /tmp/research-rag-wheel/bin/research-rag eval --help
+          /tmp/research-rag-wheel/bin/python -c "import research_rag; print(research_rag.__version__)"
