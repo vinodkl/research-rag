@@ -1,27 +1,17 @@
 # Environment and secrets
 .env
-.env.*
-!.env.example
 .venv/
 
-# Data: PDFs, OCR caches, indexes, run reports. All reproducible from corpus.yaml.
+# Data: PDFs, caption cache, FAISS index. Rebuildable from papers.yaml.
 data/
 
 # Python
 __pycache__/
 *.pyc
-*.egg-info/
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.hypothesis/
 .coverage
-htmlcov/
-dist/
-build/
 
-# Local editor and operating-system metadata
+# Editors and OS
 .DS_Store
 .idea/
 .vscode/
-.claude/

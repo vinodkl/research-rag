@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "rag-api",
+      "runtimeExecutable": "/Users/gauravsen/Downloads/research-rag/.venv/bin/python",
+      "runtimeArgs": [
+        "-m", "uvicorn", "app:app",
+        "--host", "127.0.0.1", "--port", "8477",
+        "--app-dir", "/Users/gauravsen/Downloads/research-rag"
+      ],
+      "port": 8477
+    }
+  ]
+}
