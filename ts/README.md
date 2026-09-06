@@ -33,3 +33,14 @@ npm run search -- "How does attention work?"
 The CLI embeds the question, ranks all stored chunks by cosine similarity, and prints the five highest-scoring matches with their score, paper, section, page, and text.
 
 Reranking and answer generation are intentionally not implemented yet.
+
+## Phase 1 learning highlights
+
+- **Fetch:** downloads configured paper PDFs into `data/papers/`.
+- **Parse:** converts each PDF into page-preserving text and handles figure captions.
+- **Chunk:** turns pages into retrieval units, splitting large sections and merging tiny ones.
+- **Embed:** converts every chunk into a 3,072-dimensional meaning vector using `text-embedding-3-large`; unchanged text reuses its cached vector.
+- **Retrieve:** embeds the question once, compares it with every chunk using cosine similarity, and returns the top `k` chunks, not an answer.
+- **Store:** `data/index.json` is the minimal local store; the store stage validates its model, dimensions, and vector values.
+- **Ingest:** only orchestrates `fetch -> parse -> chunk -> embed -> store` in order.
+- **Current boundary:** search returns ranked passages with metadata and scores; answer generation, reranking, citations, guardrails, and a server are future work.
