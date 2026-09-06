@@ -1,0 +1,26 @@
+{
+  "name": "research-rag-ts",
+  "private": true,
+  "type": "module",
+  "description": "Learning port of research-rag's local ingestion pipeline (parse -> chunk -> embed -> index), built one stage at a time.",
+  "scripts": {
+    "fetch": "tsx src/pipeline/1-fetch.ts",
+    "parse": "tsx src/pipeline/2-parse/index.ts",
+    "chunk": "tsx src/pipeline/3-chunk.ts",
+    "embed": "tsx src/pipeline/4-embed.ts",
+    "store": "tsx src/pipeline/5-store.ts",
+    "search": "tsx src/search/search.ts",
+    "ingest": "tsx src/pipeline/ingest.ts",
+    "test": "tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "mupdf": "^1.28.0",
+    "openai": "^4.68.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  }
+}
