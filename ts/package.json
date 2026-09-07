@@ -10,6 +10,7 @@
     "embed": "tsx src/pipeline/4-embed.ts",
     "store": "tsx src/pipeline/5-store.ts",
     "search": "tsx src/search/search.ts",
+    "ask": "tsx src/generation/ask.ts",
     "ingest": "tsx src/pipeline/ingest.ts",
     "test": "tsx --test src/**/*.test.ts"
   },

@@ -32,7 +32,23 @@ npm run search -- "How does attention work?"
 
 The CLI embeds the question, ranks all stored chunks by cosine similarity, and prints the five highest-scoring matches with their score, paper, section, page, and text.
 
-Reranking and answer generation are intentionally not implemented yet.
+## Grounded answer comparison
+
+The `search` command is the passage-only baseline. The `ask` command adds LLM generation using those passages as context:
+
+```sh
+npm run ask -- "How does attention work?"
+```
+
+To compare with a plain LLM response, bypass retrieval explicitly:
+
+```sh
+npm run ask -- --no-rag "How does attention work?"
+```
+
+The RAG answer model is instructed to use only the retrieved passages and return an answer plus chunk IDs and quotes. `ask` retrieves 10 vector candidates, reranks them down to 5, then generates the answer. With `--no-rag`, no index lookup, retrieval, or reranking occurs, and the model receives only the question. Set `OPENAI_GENERATION_MODEL` or `OPENAI_RERANK_MODEL` to override the default `gpt-4o-mini`.
+
+Reranking and guardrails are intentionally still minimal. RAG citations are checked against retrieved chunk IDs and verbatim quotes before they are displayed.
 
 ## Phase 1 learning highlights
 
@@ -43,4 +59,4 @@ Reranking and answer generation are intentionally not implemented yet.
 - **Retrieve:** embeds the question once, compares it with every chunk using cosine similarity, and returns the top `k` chunks, not an answer.
 - **Store:** `data/index.json` is the minimal local store; the store stage validates its model, dimensions, and vector values.
 - **Ingest:** only orchestrates `fetch -> parse -> chunk -> embed -> store` in order.
-- **Current boundary:** search returns ranked passages with metadata and scores; answer generation, reranking, citations, guardrails, and a server are future work.
+- **Current boundary:** search returns ranked passages; `ask` adds a first grounded-generation pass, while reranking, strict citation validation, guardrails, and a server remain future work.
