@@ -65,7 +65,6 @@ export function validateGeneratedAnswer(value: unknown, results?: SearchResult[]
   if (!results) return { answer: raw.answer, citations: [] };
 
   const chunks = new Map(results.map(({ chunk }) => [chunk.id, chunk]));
-  console.log('response', value)
   const seen = new Set<string>();
   const citations: Citation[] = [];
   for (const item of raw.citations) {

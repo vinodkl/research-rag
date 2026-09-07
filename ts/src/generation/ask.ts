@@ -3,14 +3,28 @@ import { fileURLToPath } from "node:url";
 import { generateAnswer } from "./generate.js";
 import { search } from "../search/search.js";
 import { rerank } from "../search/rerank.js";
+import { checkQuestion, checkRetrieval, sanitizeQuestion } from "../safety/guardrails.js";
 
 async function main() {
   const args = process.argv.slice(2);
   const plain = args.includes("--no-rag");
-  const question = args.filter((arg) => arg !== "--no-rag").join(" ").trim();
-  if (!question) throw new Error('usage: npm run ask -- [--no-rag] "your question"');
+  const rawQuestion = args.filter((arg) => arg !== "--no-rag").join(" ").trim();
+  if (!rawQuestion) throw new Error('usage: npm run ask -- [--no-rag] "your question"');
+  const refusal = checkQuestion(rawQuestion);
+  if (refusal) {
+    console.log(refusal);
+    return;
+  }
+  const question = sanitizeQuestion(rawQuestion);
 
   let results = plain ? undefined : await search(question, 10);
+  if (results) {
+    const refusal = checkRetrieval(results);
+    if (refusal) {
+      console.log(refusal);
+      return;
+    }
+  }
   if (results) {
     try {
       results = await rerank(question, results, 5);
