@@ -1,6 +1,6 @@
-import { expandQuery } from "./expand.js";
-import { search } from "./search.js";
-import type { SearchResult } from "./retrieve.js";
+import { expandQuery } from "./query-expansion.js";
+import { retrieveChunks } from "./retrieve-chunks.js";
+import type { SearchResult } from "../types/index.js";
 
 const RRF_K = 60;
 
@@ -35,7 +35,7 @@ export function fuseRankings(rankings: SearchResult[][], limit: number): SearchR
     .map(({ result }) => result);
 }
 
-export async function advancedSearch(
+export async function retrieveChunksWithQueryExpansion(
   question: string,
   limit = 10,
   perQueryLimit = 10,
@@ -46,6 +46,6 @@ export async function advancedSearch(
   } catch {
     queries = [question];
   }
-  const rankings = await Promise.all(queries.map((query) => search(query, perQueryLimit)));
+  const rankings = await Promise.all(queries.map((query) => retrieveChunks(query, perQueryLimit)));
   return fuseRankings(rankings, limit);
 }

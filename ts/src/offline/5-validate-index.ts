@@ -8,13 +8,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { IndexedChunk } from "../types/index.js";
+import type { Index } from "../types/index.js";
 
-export interface Index {
-  model: string;
-  dimensions: number;
-  chunks: IndexedChunk[];
-}
+export type { Index } from "../types/index.js";
 
 export function validateIndex(value: unknown): Index {
   if (!value || typeof value !== "object") throw new Error("index.json must contain an object");

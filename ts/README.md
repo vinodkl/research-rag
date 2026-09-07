@@ -32,21 +32,15 @@ npm run search -- "How does attention work?"
 
 The CLI embeds the question, ranks all stored chunks by cosine similarity, and prints the five highest-scoring matches with their score, paper, section, page, and text.
 
-## Grounded answer comparison
+## Grounded answers
 
-The `search` command is the passage-only baseline. The `ask` command adds LLM generation using those passages as context:
+The `search` command is the passage-only baseline. The `ask` command generates an answer using retrieved passages as context:
 
 ```sh
 npm run ask -- "How does attention work?"
 ```
 
-To compare with a plain LLM response, bypass retrieval explicitly:
-
-```sh
-npm run ask -- --no-rag "How does attention work?"
-```
-
-The RAG answer model is instructed to use only the retrieved passages and return an answer plus chunk IDs and quotes. `ask` retrieves 10 vector candidates, reranks them down to 5, then generates the answer. With `--no-rag`, no index lookup, retrieval, or reranking occurs, and the model receives only the question. Set `OPENAI_GENERATION_MODEL` or `OPENAI_RERANK_MODEL` to override the default `gpt-4o-mini`.
+The answer model is instructed to use only the retrieved passages and return an answer plus chunk IDs and quotes. `ask` retrieves 10 vector candidates, reranks them down to 5, then generates the answer. Set `OPENAI_GENERATION_MODEL` or `OPENAI_RERANK_MODEL` to override the default `gpt-4o-mini`.
 
 Reranking and guardrails are intentionally still minimal. RAG citations are checked against retrieved chunk IDs and verbatim quotes before they are displayed.
 

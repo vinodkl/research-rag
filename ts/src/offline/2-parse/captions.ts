@@ -18,13 +18,13 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import OpenAI from "openai";
+import { deepseekClient } from "../../llm/client.js";
+import { models } from "../../config/settings.js";
 
 const CACHE_PATH = path.join(import.meta.dirname, "..", "..", "..", "data", "captions.json");
-const CAPTION_MODEL = "deepseek-v4-flash-vision-exp";
+const CAPTION_MODEL = models.caption;
 
 let cache: Record<string, string> | null = null;
-let client: OpenAI | null = null;
 
 async function loadCache(): Promise<Record<string, string>> {
   if (cache) return cache;
@@ -44,16 +44,6 @@ async function saveCache(): Promise<void> {
   await writeFile(CACHE_PATH, JSON.stringify(cache, null, 0));
 }
 
-function visionClient(): OpenAI {
-  if (client) return client;
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) {
-    throw new Error("DEEPSEEK_API_KEY is not set (copy ts/.env.example -> ts/.env)");
-  }
-  client = new OpenAI({ apiKey, baseURL: "https://api.deepseek.com" });
-  return client;
-}
-
 /** One sentence describing a figure, cached by content hash. */
 export async function captionImage(png: Uint8Array): Promise<string> {
   const store = await loadCache();
@@ -61,7 +51,7 @@ export async function captionImage(png: Uint8Array): Promise<string> {
   if (store[key]) return store[key];
 
   const dataUrl = `data:image/png;base64,${Buffer.from(png).toString("base64")}`;
-  const completion = await visionClient().chat.completions.create({
+  const completion = await deepseekClient().chat.completions.create({
     model: CAPTION_MODEL,
     messages: [
       {

@@ -1,4 +1,6 @@
-import type { IndexedChunk } from "../types/index.js";
+import type { IndexedChunk, SearchResult } from "../types/index.js";
+
+export type { SearchResult } from "../types/index.js";
 
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) throw new Error("vectors must have matching dimensions");
@@ -12,11 +14,6 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   }
   if (aNorm === 0 || bNorm === 0) throw new Error("vectors must not be zero-length");
   return dot / (Math.sqrt(aNorm) * Math.sqrt(bNorm));
-}
-
-export interface SearchResult {
-  chunk: IndexedChunk;
-  score: number;
 }
 
 export function topK(chunks: IndexedChunk[], query: number[], k = 5): SearchResult[] {

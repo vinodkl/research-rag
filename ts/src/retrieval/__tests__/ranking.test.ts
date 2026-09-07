@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cosineSimilarity, topK } from "./retrieve.js";
+import { cosineSimilarity, topK } from "../ranking.js";
 
 const chunk = (id: string, embedding: number[]) => ({
   id,

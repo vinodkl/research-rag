@@ -1,4 +1,4 @@
-import type { SearchResult } from "../search/retrieve.js";
+import type { SearchResult } from "../types/index.js";
 
 const INJECTION = /(?:ignore|disregard|forget)\s+(?:the\s+|all\s+)?(?:previous|prior|above)\s+(?:instructions?|prompts?)|(?:reveal|show|print)\s+(?:your\s+)?(?:system|developer)\s+(?:prompt|instructions?)/i;
 const UNSAFE = /\b(?:write|generate|produce|give me)\b.{0,50}\b(?:hate speech|racial slurs?|pornographic|nsfw)\b|\b(?:how (?:can|do) i|instructions? (?:for|to))\b.{0,50}\b(?:kill|harm|attack)\s+(?:a person|someone|people)\b/i;

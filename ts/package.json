@@ -4,14 +4,14 @@
   "type": "module",
   "description": "Learning port of research-rag's local ingestion pipeline (parse -> chunk -> embed -> index), built one stage at a time.",
   "scripts": {
-    "fetch": "tsx src/pipeline/1-fetch.ts",
-    "parse": "tsx src/pipeline/2-parse/index.ts",
-    "chunk": "tsx src/pipeline/3-chunk.ts",
-    "embed": "tsx src/pipeline/4-embed.ts",
-    "validate-index": "tsx src/pipeline/5-validate-index.ts",
-    "search": "tsx src/search/search.ts",
+    "fetch": "tsx src/offline/1-fetch.ts",
+    "parse": "tsx src/offline/2-parse/index.ts",
+    "chunk": "tsx src/offline/3-chunk.ts",
+    "embed": "tsx src/offline/4-embed.ts",
+    "validate-index": "tsx src/offline/5-validate-index.ts",
+    "search": "tsx src/retrieval/search-cli.ts",
     "ask": "tsx src/generation/ask.ts",
-    "ingest": "tsx src/pipeline/ingest.ts",
+    "ingest": "tsx src/offline/ingest.ts",
     "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {

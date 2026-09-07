@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { generateAnswer, quoteInChunk, validateGeneratedAnswer } from "./generate.js";
+import { generateAnswer, quoteInChunk, validateGeneratedAnswer } from "../generate.js";
 
 const result = {
   score: 0.9,

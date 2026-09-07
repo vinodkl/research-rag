@@ -1,14 +1,9 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { readIndex } from "../pipeline/5-validate-index.js";
-import { embedQuery } from "./query.js";
-import { topK, type SearchResult } from "./retrieve.js";
+import type { SearchResult } from "../types/index.js";
+import { retrieveChunks } from "./retrieve-chunks.js";
 
-export async function search(question: string, k = 5): Promise<SearchResult[]> {
-  const index = await readIndex();
-  const query = await embedQuery(question);
-  return topK(index.chunks, query, k);
-}
+export { retrieveChunks } from "./retrieve-chunks.js";
 
 export function formatResults(question: string, results: SearchResult[]): string {
   if (results.length === 0) return `Search: ${question}\n\nNo matches found.`;
@@ -26,7 +21,7 @@ async function main() {
   const question = process.argv.slice(2).join(" ").trim();
   if (!question) throw new Error('usage: npm run search -- "your question"');
 
-  console.log(formatResults(question, await search(question)));
+  console.log(formatResults(question, await retrieveChunks(question)));
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {

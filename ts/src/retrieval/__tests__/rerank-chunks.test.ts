@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { validateRanking } from "./rerank.js";
+import { validateRanking } from "../rerank-chunks.js";
 
 const make = (id: string, score: number) => ({
   score,

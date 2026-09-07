@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chunkPaper } from "./3-chunk.js";
+import { chunkPaper } from "../3-chunk.js";
 
 test("chunkPaper starts chunks at numbered headings and keeps metadata", () => {
   const body = "A".repeat(220);

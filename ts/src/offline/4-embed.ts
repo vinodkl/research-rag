@@ -19,28 +19,16 @@
  * reused for every chunk whose text is byte-for-byte unchanged.
  */
 
-import "dotenv/config"; // loads ts/.env, so OPENAI_API_KEY is set before we build the client
 import { createHash } from "node:crypto";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import OpenAI from "openai";
+import { openaiClient } from "../llm/client.js";
+import { models } from "../config/settings.js";
 import type { Chunk, IndexedChunk } from "../types/index.js";
 
-export const MODEL = "text-embedding-3-large"; // 3072 dimensions
+export const MODEL = models.embedding;
 const BATCH = 128; // texts per API request (matches the Python BATCH)
-
-let client: OpenAI | null = null;
-
-function openaiClient(): OpenAI {
-  if (client) return client;
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not set (copy ts/.env.example -> ts/.env)");
-  }
-  client = new OpenAI({ apiKey });
-  return client;
-}
 
 /** List of texts -> matrix of unit-length vectors, one row per text. */
 export async function embed(texts: string[]): Promise<number[][]> {

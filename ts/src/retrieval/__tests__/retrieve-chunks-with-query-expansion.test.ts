@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fuseRankings } from "./advanced.js";
+import { fuseRankings } from "../retrieve-chunks-with-query-expansion.js";
 
 const result = (id: string, score: number) => ({
   score,

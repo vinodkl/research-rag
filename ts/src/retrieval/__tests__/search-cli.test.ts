@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatResults } from "./search.js";
+import { formatResults } from "../search-cli.js";
 
 test("formatResults presents ranked matches with useful metadata", () => {
   const result = formatResults("What is attention?", [

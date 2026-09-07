@@ -1,15 +1,13 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateAnswer } from "./generate.js";
-import { advancedSearch } from "../search/advanced.js";
-import { rerank } from "../search/rerank.js";
+import { retrieveChunksWithQueryExpansion } from "../retrieval/retrieve-chunks-with-query-expansion.js";
+import { rerankChunks } from "../retrieval/rerank-chunks.js";
 import { checkQuestion, checkRetrieval, sanitizeQuestion } from "../safety/guardrails.js";
 
 async function main() {
-  const args = process.argv.slice(2);
-  const plain = args.includes("--no-rag");
-  const rawQuestion = args.filter((arg) => arg !== "--no-rag").join(" ").trim();
-  if (!rawQuestion) throw new Error('usage: npm run ask -- [--no-rag] "your question"');
+  const rawQuestion = process.argv.slice(2).join(" ").trim();
+  if (!rawQuestion) throw new Error('usage: npm run ask -- "your question"');
   const refusal = checkQuestion(rawQuestion);
   if (refusal) {
     console.log(refusal);
@@ -17,7 +15,7 @@ async function main() {
   }
   const question = sanitizeQuestion(rawQuestion);
 
-  let results = plain ? undefined : await advancedSearch(question, 10, 10);
+  let results = await retrieveChunksWithQueryExpansion(question, 10, 10);
   if (results) {
     const refusal = checkRetrieval(results);
     if (refusal) {
@@ -27,7 +25,7 @@ async function main() {
   }
   if (results) {
     try {
-      results = await rerank(question, results, 5);
+      results = await rerankChunks(question, results, 5);
     } catch (err) {
       console.warn(`Reranking unavailable (${(err as Error).name}); using vector order`);
       results = results.slice(0, 5);
@@ -43,7 +41,7 @@ async function main() {
     );
     return;
   }
-  console.log(`\nAnswer${plain ? " (plain LLM, RAG bypassed)" : " (RAG)"}\n──────\n${answer.answer}`);
+  console.log(`\nAnswer (RAG)\n──────\n${answer.answer}`);
   if (answer.citations.length > 0) {
     console.log("\nSources\n───────");
     for (const citation of answer.citations) {

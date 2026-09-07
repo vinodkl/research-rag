@@ -15,14 +15,12 @@
  * we ask a vision model for one, appended as "[Figure: ...]".
  */
 
-import "dotenv/config"; // loads ts/.env, so DEEPSEEK_API_KEY is set before captions.ts needs it
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import * as mupdf from "mupdf";
 import { PAPERS } from "../../config/papers.js";
 import { captionImage } from "./captions.js";
-import { text } from "node:stream/consumers";
 
 const PAPERS_DIR = path.join(import.meta.dirname, "..", "..", "..", "data", "papers");
 const OUT_DIR = path.join(import.meta.dirname, "..", "..", "..", "data", "parsed");
