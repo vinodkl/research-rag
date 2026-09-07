@@ -40,7 +40,6 @@ export async function expandQuery(question: string, api?: OpenAI): Promise<strin
   if (!content) return [question];
   const rewrite = (JSON.parse(content) as { rewrite?: unknown }).rewrite;
 
-  console.log(`Expanded query:`, question, rewrite);
   return typeof rewrite === "string" && rewrite.trim() && rewrite.trim() !== question.trim()
     ? [question, rewrite.trim()]
     : [question];

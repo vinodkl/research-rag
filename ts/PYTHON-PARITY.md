@@ -38,12 +38,12 @@ Remaining TypeScript work compared with the Python reference implementation
 
 | Item | TS status |
 |---|---|
-| Citations: chunk-id + verbatim quote, dedupe, 10–300 chars, refusal when none valid | ✅ |
+| Citations: chunk-id + verbatim quote, dedupe, 10–300 chars, refusal when none valid | ◑ ordered-word match is deliberately looser than Python's contiguous match |
 | Output guard: empty answer / PII-leak in answer | ❌ |
 | Full question guards: NFKC, Luhn-validated cards, redaction record, length | ◑ subset |
 | Retrieval score floor on real-query cosine (0.10), HyDE excluded | ◑ floor exists, but applied post-fusion |
 | Pipeline result object: `Answer{answer, citations, refused, unavailable, trace}` | ❌ linear CLI, no trace |
-| Graceful generation-failure refusal | ❌ uncaught generation errors exit the CLI |
+| Graceful generation-failure refusal | ✅ |
 
 ## 5. Missing modules entirely
 

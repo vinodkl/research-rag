@@ -2,10 +2,40 @@ import "dotenv/config";
 import OpenAI from "openai";
 import type { SearchResult } from "../search/retrieve.js";
 
+/** Squash case and punctuation, then tokenize for ordered-word matching. */
+function words(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+}
+
+/**
+ * True when every quote word appears inside chunkText in order (gaps allowed).
+ * Chunking can interleave figure captions mid-paragraph, so a strict contiguous
+ * substring rejects genuine verbatim quotes that merely span such an insertion;
+ * ordered-word matching tolerates that while still requiring the quote's words
+ * to exist in the real text.
+ */
+export function quoteInChunk(quote: string, chunkText: string): boolean {
+  const hay = words(chunkText);
+  const needle = words(quote);
+  if (!needle.length) return false;
+  let i = 0;
+  for (const word of hay) {
+    if (word === needle[i]) i += 1;
+    if (i === needle.length) return true;
+  }
+  return false;
+}
+
 const MODEL = process.env.OPENAI_GENERATION_MODEL ?? "gpt-4o-mini";
 const GROUNDED_SYSTEM = `Answer the question using only the supplied research-paper passages.
 If the passages do not contain enough evidence, say that plainly instead of guessing.
-Return JSON with an answer string and a citations array. Each citation must contain a chunk_id and a short verbatim quote.`;
+Return JSON with an answer string and citations. Every citation must have a chunk_id and a short verbatim quote.
+Quotes are checked mechanically: copy them character-for-character from a single passage, do not paraphrase, do not shorten mid-sentence, and do not join text from separate sentences.`;
 const PLAIN_SYSTEM = `Answer the user's question normally. Return JSON with an answer string and an empty citations array.`;
 const RESPONSE_FORMAT = {
   type: "json_schema" as const,
@@ -75,9 +105,11 @@ export function validateGeneratedAnswer(value: unknown, results?: SearchResult[]
     const chunk = chunks.get(citation.chunk_id);
     const key = `${citation.chunk_id}:${quote.toLowerCase().replace(/\s+/g, " ")}`;
     if (
-      chunk && quote.length > 10 && quote.length <= 300 &&
+      chunk &&
+      quote.length > 10 &&
+      quote.length <= 300 &&
       !seen.has(key) &&
-      chunk.text.toLowerCase().replace(/\s+/g, " ").includes(quote.toLowerCase().replace(/\s+/g, " "))
+      quoteInChunk(quote, chunk.text)
     ) {
       seen.add(key);
       citations.push({ chunk_id: citation.chunk_id, quote });

@@ -33,12 +33,21 @@ async function main() {
       results = results.slice(0, 5);
     }
   }
-  const answer = await generateAnswer(question, results);
+  let answer;
+  try {
+    answer = await generateAnswer(question, results);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : err);
+    console.log(
+      "\nI could not produce an answer with verifiable citations, so I refused rather than guess.",
+    );
+    return;
+  }
   console.log(`\nAnswer${plain ? " (plain LLM, RAG bypassed)" : " (RAG)"}\n──────\n${answer.answer}`);
   if (answer.citations.length > 0) {
     console.log("\nSources\n───────");
     for (const citation of answer.citations) {
-      console.log(`[${citation.chunk_id}] “${citation.quote}”`);
+      console.log(`Citation: [${citation.chunk_id}] “${citation.quote}”`);
     }
   }
 }
