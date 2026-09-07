@@ -12,7 +12,7 @@
  * The model is a contract: the SAME model must embed the chunks now and the
  * query at question time. Swap the model without re-embedding every chunk and
  * search silently returns nonsense, so the model id is written into the output
- * file (see `MODEL`) for the store stage to check.
+ * file (see `MODEL`) for the validation stage to check.
  *
  * Embeddings cost money per call, so - like captions.ts - this stage never
  * pays twice for text it has already embedded: a previous data/index.json is
@@ -59,7 +59,7 @@ const DATA_DIR = path.join(import.meta.dirname, "..", "..", "data");
 const CHUNKS_PATH = path.join(DATA_DIR, "chunks.json");
 const INDEX_PATH = path.join(DATA_DIR, "index.json");
 
-/** What the store stage reads: the model contract plus every embedded chunk. */
+/** What the validation stage reads: the model contract plus every embedded chunk. */
 interface Index {
   model: string;
   dimensions: number;

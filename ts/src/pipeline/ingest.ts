@@ -10,7 +10,7 @@ const stages = [
   "src/pipeline/2-parse/index.ts",
   "src/pipeline/3-chunk.ts",
   "src/pipeline/4-embed.ts",
-  "src/pipeline/5-store.ts",
+  "src/pipeline/5-validate-index.ts",
 ];
 
 for (const stage of stages) {

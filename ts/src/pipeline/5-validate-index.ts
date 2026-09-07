@@ -1,4 +1,4 @@
-/** Step 5 - Store: validate the local embedding index.
+/** Step 5 - Validate the local embedding index.
  *
  * `index.json` is the local store for this learning pipeline. Search can read
  * it directly, so this stage only checks the model/vector contract and reports
@@ -43,7 +43,7 @@ export async function readIndex(filePath = INDEX_PATH): Promise<Index> {
 
 async function main() {
   const index = await readIndex();
-  console.log(`store: ${index.chunks.length} chunks (${index.model}, ${index.dimensions}-dim)`);
+  console.log(`index valid: ${index.chunks.length} chunks (${index.model}, ${index.dimensions}-dim)`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))) {

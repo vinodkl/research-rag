@@ -20,8 +20,12 @@ htmlcov/
 dist/
 build/
 
+# Node / TypeScript (ts/)
+node_modules/
+
 # Local editor and operating-system metadata
 .DS_Store
 .idea/
 .vscode/
 .claude/
+capstone-research/

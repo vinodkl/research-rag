@@ -17,10 +17,10 @@ Required environment variables:
 
 ## Stages
 
-`ingest` runs `fetch -> parse -> chunk -> embed -> store`.
-Intermediate and final files are written under `data/`; `data/index.json` is the local embedding store and is validated by the store stage.
+`ingest` runs `fetch -> parse -> chunk -> embed -> validate-index`.
+Intermediate and final files are written under `data/`; `data/index.json` is the local embedding store and is checked by the validation stage.
 
-Run an individual stage with `npm run fetch`, `parse`, `chunk`, `embed`, or `store`. Offline checks run with `npm test`; they do not call providers.
+Run an individual stage with `npm run fetch`, `parse`, `chunk`, `embed`, or `validate-index`. Offline checks run with `npm test`; they do not call providers.
 
 ## Search
 
@@ -57,6 +57,6 @@ Reranking and guardrails are intentionally still minimal. RAG citations are chec
 - **Chunk:** turns pages into retrieval units, splitting large sections and merging tiny ones.
 - **Embed:** converts every chunk into a 3,072-dimensional meaning vector using `text-embedding-3-large`; unchanged text reuses its cached vector.
 - **Retrieve:** embeds the question once, compares it with every chunk using cosine similarity, and returns the top `k` chunks, not an answer.
-- **Store:** `data/index.json` is the minimal local store; the store stage validates its model, dimensions, and vector values.
-- **Ingest:** only orchestrates `fetch -> parse -> chunk -> embed -> store` in order.
+- **Validate index:** checks `data/index.json` for its model, dimensions, and vector values.
+- **Ingest:** only orchestrates `fetch -> parse -> chunk -> embed -> validate-index` in order.
 - **Current boundary:** search returns ranked passages; `ask` adds a first grounded-generation pass, while reranking, strict citation validation, guardrails, and a server remain future work.

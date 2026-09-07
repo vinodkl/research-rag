@@ -1,6 +1,6 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { readIndex } from "../pipeline/5-store.js";
+import { readIndex } from "../pipeline/5-validate-index.js";
 import { embedQuery } from "./query.js";
 import { topK, type SearchResult } from "./retrieve.js";
 
