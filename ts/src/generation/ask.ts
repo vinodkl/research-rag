@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateAnswer } from "./generate.js";
-import { search } from "../search/search.js";
+import { advancedSearch } from "../search/advanced.js";
 import { rerank } from "../search/rerank.js";
 import { checkQuestion, checkRetrieval, sanitizeQuestion } from "../safety/guardrails.js";
 
@@ -17,7 +17,7 @@ async function main() {
   }
   const question = sanitizeQuestion(rawQuestion);
 
-  let results = plain ? undefined : await search(question, 10);
+  let results = plain ? undefined : await advancedSearch(question, 10, 10);
   if (results) {
     const refusal = checkRetrieval(results);
     if (refusal) {
